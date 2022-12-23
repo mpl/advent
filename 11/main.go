@@ -13,11 +13,12 @@ import (
 var debug = flag.Bool("debug", false, `debug mode`)
 
 type monkey struct {
-	items       []int
-	operation   func(int) int
-	test        func(int) bool
-	monkeyTrue  int
-	monkeyFalse int
+	items        []int
+	operation    func(int) int
+	test         func(int) bool
+	monkeyTrue   int
+	monkeyFalse  int
+	inspectCount int
 }
 
 func parseOperation(operation string) func(int) int {
@@ -49,7 +50,8 @@ func parseOperation(operation string) func(int) int {
 
 func main() {
 	flag.Parse()
-	f, err := os.Open("./input.txt.demo")
+	//	f, err := os.Open("./input.txt.demo")
+	f, err := os.Open("./input.txt")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -95,6 +97,7 @@ func main() {
 		if *debug {
 			println(len(monkeys), "DIVISOR: ", divisor)
 		}
+		// TODO: we should defer, and make it directly return the monkey destination
 		kong.test = func(i int) bool {
 			return i%divisor == 0
 		}
@@ -118,7 +121,7 @@ func main() {
 		sc.Scan()
 	}
 
-	for {
+	for i := 0; i < 20; i++ {
 		for idx, mk := range monkeys {
 			if *debug {
 				println("MONKEY ", idx)
@@ -129,25 +132,32 @@ func main() {
 				}
 				worry := mk.operation(item)
 				worry = worry / 3
-				mk.items[k] = worry
+				// mk.items[k] = worry
 				if *debug {
 					println(k, "NEW WORRY: ", worry)
 				}
 
+				monkeyDest := 0
 				if mk.test(worry) {
-					if *debug {
-						println(k, worry, "THROWING TO MK ", mk.monkeyTrue)
-					}
+					monkeyDest = mk.monkeyTrue
 				} else {
-					if *debug {
-						println(k, worry, "THROWING TO MK ", mk.monkeyFalse)
-					}
+					monkeyDest = mk.monkeyFalse
 				}
+				if *debug {
+					println(k, worry, "THROWING TO MK ", monkeyDest)
+				}
+				monkeys[monkeyDest].items = append(monkeys[monkeyDest].items, worry)
+				mk.inspectCount++
 			}
+			mk.items = []int{}
 		}
-		break
 	}
 
+	for i, mk := range monkeys {
+		println("Monkey", i, "inspected items", mk.inspectCount, "times.")
+	}
+
+	// Answer: 54752
 }
 
 /*
