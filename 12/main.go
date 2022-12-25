@@ -86,10 +86,8 @@ func main() {
 	hike = append(hike, pos)
 	steps := 0
 	for {
-		if steps >= 50 {
-			if *debug {
-				println("EMERGENCY BRAKING")
-			}
+		if steps >= 10000 {
+			println("EMERGENCY BRAKING")
 			break
 		}
 		if pos.x == dest.x && pos.y == dest.y {
@@ -122,12 +120,15 @@ func main() {
 		}
 		nb = noWrongHorizontalWay(vector, nb)
 		if *debug {
-			// println("STEP", steps, "6", "DIRECTIONS LEFT:", len(nb))
+			println("STEP", steps, "6", "DIRECTIONS LEFT:", len(nb))
+			if steps == 4 {
+				printPoints(nb)
+			}
 		}
 		nb = bestDirection(vector, nb)
 
 		if *debug {
-			println("STEP", steps, "DIRECTIONS LEFT:", len(nb))
+			// println("STEP", steps, "DIRECTIONS LEFT:", len(nb))
 		}
 		if len(nb) != 1 {
 			panic("NOPE")
@@ -163,6 +164,12 @@ v..v<<<<
 ..v>>>^^
 ..>>>>>^
 */
+
+func printPoints(p map[int]point) {
+	for k, v := range p {
+		println(string(dirToByte(k)), v.x, v.y)
+	}
+}
 
 func printMap() {
 	if !*debug {
@@ -334,6 +341,8 @@ func noWrongHorizontalWay(direction position, neighbours map[int]point) map[int]
 	delete(without, RIGHT)
 	return without
 }
+
+// TODO: change this heuristics, because: it's better to go at 90deg from the goal rather than in the opposite direction.
 
 func bestDirection(direction position, neighbours map[int]point) map[int]point {
 	without := make(map[int]point)
