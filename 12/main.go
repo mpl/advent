@@ -23,14 +23,17 @@ type point struct {
 	next int
 }
 
-var start position
-var dest position
-var topomap = make(map[position]int)
-var DOWN, UP, RIGHT, LEFT = 1, 2, 3, 4
-var bottom = 97
-var top = 122
-
-var hike []point
+var (
+	start                 position
+	dest                  position
+	topomap               = make(map[position]int)
+	DOWN, UP, RIGHT, LEFT = 1, 2, 3, 4
+	bottom                = int('a')
+	top                   = int('z')
+	width                 = 0
+	height                = 0
+	hike                  []point
+)
 
 func main() {
 	flag.Parse()
@@ -47,8 +50,6 @@ func main() {
 	defer f.Close()
 	sc := bufio.NewScanner(f)
 
-	width := 0
-	height := 0
 	debugCount := 0
 	for sc.Scan() {
 		if *debug {
@@ -76,14 +77,7 @@ func main() {
 		height++
 	}
 
-	for y := 0; y < height; y++ {
-		var line []byte
-		for x := 0; x < width; x++ {
-			elevation, _ := topomap[position{x: x, y: y}]
-			line = append(line, byte(elevation))
-		}
-		println(string(line))
-	}
+	printMap()
 
 	zstart, _ := topomap[start]
 	pos := point{x: start.x, y: start.y, z: zstart}
@@ -92,40 +86,43 @@ func main() {
 	hike = append(hike, pos)
 	steps := 0
 	for {
-		if steps >= 30 {
+		if steps >= 50 {
 			if *debug {
 				println("EMERGENCY BRAKING")
 			}
 			break
 		}
 		if pos.x == dest.x && pos.y == dest.y {
+			pos.next = 'X'
+			hike[steps] = pos
 			break
 		}
 
 		z := pos.z
 		nb := neighbours(pos)
 		if *debug {
-			println("STEP", steps, "1", "DIRECTIONS LEFT:", len(nb))
+			// println("STEP", steps, "1", "DIRECTIONS LEFT:", len(nb))
 		}
 		noClimbing(z, nb)
 		if *debug {
-			println("STEP", steps, "2", "DIRECTIONS LEFT:", len(nb))
+			// println("STEP", steps, "2", "DIRECTIONS LEFT:", len(nb))
 		}
 		nb = noFalling(z, nb)
 		if *debug {
-			println("STEP", steps, "3", "DIRECTIONS LEFT:", len(nb))
+			// println("STEP", steps, "3", "DIRECTIONS LEFT:", len(nb))
 		}
 		nb = noBackTracking(prevPos, nb)
 		if *debug {
-			println("STEP", steps, "4", "DIRECTIONS LEFT:", len(nb))
+			// println("STEP", steps, "4", "DIRECTIONS LEFT:", len(nb))
 		}
+		nb = goHigher(nb)
 		nb = noWrongVerticalWay(vector, nb)
 		if *debug {
-			println("STEP", steps, "5", "DIRECTIONS LEFT:", len(nb))
+			// println("STEP", steps, "5", "DIRECTIONS LEFT:", len(nb))
 		}
 		nb = noWrongHorizontalWay(vector, nb)
 		if *debug {
-			println("STEP", steps, "6", "DIRECTIONS LEFT:", len(nb))
+			// println("STEP", steps, "6", "DIRECTIONS LEFT:", len(nb))
 		}
 		nb = bestDirection(vector, nb)
 
@@ -137,13 +134,83 @@ func main() {
 		}
 
 		prevPos = pos
-		for _, v := range nb {
+		var next int
+		for k, v := range nb {
+			next = k
 			pos = v
 			break
 		}
+		prevPos.next = next
+		hike[steps] = prevPos
 		hike = append(hike, pos)
+
+		if *debug {
+			println(steps, prevPos.x, prevPos.y, string(dirToByte(next)), pos.x, pos.y)
+		}
+
 		vector = direction(pos)
 		steps++
+	}
+
+	printHike(hike)
+
+}
+
+/*
+v..v<<<<
+>v.vv<<^
+.>vv>E^^
+..v>>>^^
+..>>>>>^
+*/
+
+func printMap() {
+	if !*debug {
+		return
+	}
+	for y := 0; y < height; y++ {
+		var line []byte
+		for x := 0; x < width; x++ {
+			elevation, _ := topomap[position{x: x, y: y}]
+			line = append(line, byte(elevation))
+		}
+		println(string(line))
+	}
+}
+
+func dirToByte(dir int) byte {
+	switch dir {
+	case UP:
+		return '^'
+	case DOWN:
+		return 'v'
+	case LEFT:
+		return '<'
+	case RIGHT:
+		return '>'
+	case 'X':
+		return 'X'
+	}
+	return 64
+}
+
+func printHike(hike []point) {
+	hikeMap := make(map[position]int)
+	for _, v := range hike {
+		hikeMap[position{x: v.x, y: v.y}] = v.next
+	}
+	for y := 0; y < height; y++ {
+		var line []byte
+		for x := 0; x < width; x++ {
+			dir, ok := hikeMap[position{x: x, y: y}]
+			if ok {
+				line = append(line, dirToByte(dir))
+				continue
+			}
+			line = append(line, '.')
+
+		}
+		println(string(line))
 	}
 
 }
@@ -210,6 +277,24 @@ func noBackTracking(previous point, neighbours map[int]point) map[int]point {
 		withoutBackTracking[k] = v
 	}
 	return withoutBackTracking
+}
+
+func goHigher(neighbours map[int]point) map[int]point {
+	highest := 0
+	without := make(map[int]point)
+	for k, v := range neighbours {
+		if v.z > highest {
+			highest = v.z
+		}
+		without[k] = v
+	}
+
+	for k, v := range without {
+		if v.z < highest {
+			delete(without, k)
+		}
+	}
+	return without
 }
 
 func noWrongVerticalWay(direction position, neighbours map[int]point) map[int]point {
