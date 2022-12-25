@@ -121,9 +121,6 @@ func main() {
 		nb = noWrongHorizontalWay(vector, nb)
 		if *debug {
 			println("STEP", steps, "6", "DIRECTIONS LEFT:", len(nb))
-			if steps == 4 {
-				printPoints(nb)
-			}
 		}
 		nb = bestDirection(vector, nb)
 
@@ -154,6 +151,7 @@ func main() {
 	}
 
 	printHike(hike)
+	println("STEPS: ", steps)
 
 }
 
@@ -342,29 +340,119 @@ func noWrongHorizontalWay(direction position, neighbours map[int]point) map[int]
 	return without
 }
 
-// TODO: change this heuristics, because: it's better to go at 90deg from the goal rather than in the opposite direction.
-
 func bestDirection(direction position, neighbours map[int]point) map[int]point {
+	if len(neighbours) == 1 {
+		return neighbours
+	}
+
 	without := make(map[int]point)
 	for k, v := range neighbours {
 		without[k] = v
 	}
+
 	_, okLEFT := neighbours[LEFT]
 	_, okRIGHT := neighbours[RIGHT]
 	_, okUP := neighbours[UP]
 	_, okDOWN := neighbours[DOWN]
 	X := math.Abs(float64(direction.x))
 	Y := math.Abs(float64(direction.y))
-	if X > Y {
-		if okLEFT || okRIGHT {
+
+	// no good direction available
+	// go in the bad direction that moves us away the least
+
+	if direction.x >= 0 && !okRIGHT && direction.y >= 0 && !okDOWN {
+		if X < Y {
 			delete(without, UP)
-			delete(without, DOWN)
+			return without
 		}
+		delete(without, LEFT)
 		return without
 	}
-	if okUP || okDOWN {
+
+	if direction.x >= 0 && !okRIGHT && direction.y <= 0 && !okUP {
+		if X < Y {
+			delete(without, DOWN)
+			return without
+		}
 		delete(without, LEFT)
-		delete(without, RIGHT)
+		return without
 	}
-	return without
+
+	if direction.x <= 0 && !okLEFT && direction.y <= 0 && !okUP {
+		if X < Y {
+			delete(without, DOWN)
+			return without
+		}
+		delete(without, RIGHT)
+		return without
+	}
+
+	if direction.x <= 0 && !okLEFT && direction.y >= 0 && !okDOWN {
+		if X < Y {
+			delete(without, UP)
+			return without
+		}
+		delete(without, RIGHT)
+		return without
+	}
+
+	// exactly one good direction available, take it.
+
+	if direction.x >= 0 && okRIGHT && (direction.y >= 0 && !okDOWN || direction.y <= 0 && !okUP) {
+		delete(without, UP)
+		delete(without, DOWN)
+		delete(without, LEFT)
+		return without
+	}
+
+	if direction.x <= 0 && okLEFT && (direction.y >= 0 && !okDOWN || direction.y <= 0 && !okUP) {
+		delete(without, UP)
+		delete(without, DOWN)
+		delete(without, RIGHT)
+		return without
+	}
+
+	if direction.y >= 0 && okDOWN && (direction.x >= 0 && !okRIGHT || direction.x <= 0 && !okLEFT) {
+		delete(without, UP)
+		delete(without, RIGHT)
+		delete(without, LEFT)
+		return without
+	}
+
+	if direction.y <= 0 && okUP && (direction.x >= 0 && !okRIGHT || direction.x <= 0 && !okLEFT) {
+		delete(without, DOWN)
+		delete(without, RIGHT)
+		delete(without, LEFT)
+		return without
+	}
+
+	// two good directions available. Take the one that gets us the closest.
+
+	if X >= Y {
+		if direction.x >= 0 && okRIGHT {
+			delete(without, UP)
+			delete(without, DOWN)
+			delete(without, LEFT)
+			return without
+		}
+		if direction.x <= 0 && okLEFT {
+			delete(without, UP)
+			delete(without, DOWN)
+			delete(without, RIGHT)
+			return without
+		}
+	}
+	if direction.y >= 0 && okDOWN {
+		delete(without, UP)
+		delete(without, RIGHT)
+		delete(without, LEFT)
+		return without
+	}
+	if direction.y <= 0 && okUP {
+		delete(without, DOWN)
+		delete(without, RIGHT)
+		delete(without, LEFT)
+		return without
+	}
+	return nil
 }
