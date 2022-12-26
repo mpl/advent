@@ -403,6 +403,35 @@ func noWrongHorizontalWay(direction position, neighbours map[int]point) map[int]
 	return without
 }
 
+/*
+TODO:
+
+func visit(apoint, from point, directionmaybe point, bestHikeSofar) (hike []point, err error) {
+  - get neighbours
+  - remove falls,
+  - remove climbing,
+  - remove backtracking,
+  - sort the rest by best direction
+    for 1,2,3 nb {
+    if hike, err := visit(1, fromhere)
+    if err != nil {
+    if diag entre 1 et 2 occupée visit(2)
+    if err != nil {
+    if diag entre 2 et 3 occupée visit(3)
+    }
+    continue
+    }
+    if diag entre 1 et 2 occupée visit(2)
+    if err != nil {
+    ...
+    }
+    if diag entre 2 et 3 occupée visit(3)
+    if err != nil {
+    ...
+    }
+    }
+    }
+*/
 func bestDirection(direction position, neighbours map[int]point, retry bool) map[int]point {
 	if len(neighbours) == 1 {
 		return neighbours
