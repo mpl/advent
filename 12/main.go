@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"flag"
+	"fmt"
+	"io"
 	"log"
 	"math"
 	"os"
@@ -17,10 +19,11 @@ type position struct {
 }
 
 type point struct {
-	x    int
-	y    int
-	z    int
-	next int
+	x        int
+	y        int
+	z        int
+	next     int
+	decision int
 }
 
 var (
@@ -33,6 +36,7 @@ var (
 	width                 = 0
 	height                = 0
 	hike                  []point
+	seen                  = make(map[point]bool)
 )
 
 func main() {
@@ -54,7 +58,7 @@ func main() {
 	for sc.Scan() {
 		if *debug {
 			if debugCount > 34 {
-				break
+				// break
 			}
 		}
 		debugCount++
@@ -77,13 +81,16 @@ func main() {
 		height++
 	}
 
-	printMap()
+	if *debug {
+		// printMap(point{})
+	}
 
 	zstart, _ := topomap[start]
 	pos := point{x: start.x, y: start.y, z: zstart}
 	vector := direction(pos)
 	prevPos := pos
 	hike = append(hike, pos)
+	retry := false
 	steps := 0
 	for {
 		if steps >= 10000 {
@@ -97,32 +104,36 @@ func main() {
 		}
 
 		z := pos.z
+		canRetry := false
 		nb := neighbours(pos)
-		if *debug {
-			// println("STEP", steps, "1", "DIRECTIONS LEFT:", len(nb))
-		}
+
+		decision := 0
+
 		noClimbing(z, nb)
-		if *debug {
-			// println("STEP", steps, "2", "DIRECTIONS LEFT:", len(nb))
-		}
+		decision++
+
 		nb = noFalling(z, nb)
-		if *debug {
-			// println("STEP", steps, "3", "DIRECTIONS LEFT:", len(nb))
-		}
+		decision++
+
 		nb = noBackTracking(prevPos, nb)
-		if *debug {
-			// println("STEP", steps, "4", "DIRECTIONS LEFT:", len(nb))
-		}
+		decision++
+
 		nb = goHigher(nb)
-		nb = noWrongVerticalWay(vector, nb)
-		if *debug {
-			// println("STEP", steps, "5", "DIRECTIONS LEFT:", len(nb))
+		decision++
+
+		// nb = noWrongVerticalWay(vector, nb)
+		decision++
+
+		// nb = noWrongHorizontalWay(vector, nb)
+		decision++
+
+		if len(nb) > 1 {
+			canRetry = true
 		}
-		nb = noWrongHorizontalWay(vector, nb)
-		if *debug {
-			println("STEP", steps, "6", "DIRECTIONS LEFT:", len(nb))
-		}
-		nb = bestDirection(vector, nb)
+		nb = bestDirection(vector, nb, retry)
+		retry = false
+		decision++
+		_ = decision
 
 		if *debug {
 			// println("STEP", steps, "DIRECTIONS LEFT:", len(nb))
@@ -140,17 +151,31 @@ func main() {
 		}
 		prevPos.next = next
 		hike[steps] = prevPos
-		hike = append(hike, pos)
 
 		if *debug {
-			println(steps, prevPos.x, prevPos.y, string(dirToByte(next)), pos.x, pos.y)
+			if steps > 45 {
+				println(steps, prevPos.x, prevPos.y, string(dirToByte(next)), pos.x, pos.y)
+			}
 		}
+		if _, ok := seen[pos]; ok {
+			if *debug {
+				println(steps, "CYCLE DETECTED ON", pos.x, pos.y)
+				printMap(point{x: pos.x, y: pos.y})
+				printHike(hike, point{x: pos.x, y: pos.y})
+			}
+			if !canRetry {
+				break
+			}
+			retry = true
+		}
+		seen[pos] = true
 
+		hike = append(hike, pos)
 		vector = direction(pos)
 		steps++
 	}
 
-	printHike(hike)
+	printHike(hike, point{})
 	println("STEPS: ", steps)
 
 }
@@ -169,13 +194,24 @@ func printPoints(p map[int]point) {
 	}
 }
 
-func printMap() {
-	if !*debug {
-		return
+func printMap(center point) {
+	startx, starty := 0, 0
+	endx, endy := width, height
+	if center.x != 0 && center.y != 0 {
+		startx = center.x - 5
+		starty = center.y - 5
+		endx = center.x + 5
+		endy = center.y + 5
+		if startx < 0 {
+			startx = 0
+		}
+		if starty < 0 {
+			starty = 0
+		}
 	}
-	for y := 0; y < height; y++ {
+	for y := starty; y < endy; y++ {
 		var line []byte
-		for x := 0; x < width; x++ {
+		for x := startx; x < endx; x++ {
 			elevation, _ := topomap[position{x: x, y: y}]
 			line = append(line, byte(elevation))
 		}
@@ -199,14 +235,41 @@ func dirToByte(dir int) byte {
 	return 64
 }
 
-func printHike(hike []point) {
+func printHike(hike []point, center point) {
+
+	startx, starty := 0, 0
+	endx, endy := width, height
+	if center.x != 0 && center.y != 0 {
+		startx = center.x - 5
+		starty = center.y - 5
+		endx = center.x + 5
+		endy = center.y + 5
+		if startx < 0 {
+			startx = 0
+		}
+		if starty < 0 {
+			starty = 0
+		}
+	}
+
+	var out io.Writer
+	if *demo || center.x != 0 && center.y != 0 {
+		out = os.Stdout
+	} else {
+		var err error
+		out, err = os.Create("./output.txt")
+		if err != nil {
+			panic(err)
+		}
+		defer out.(*os.File).Close()
+	}
 	hikeMap := make(map[position]int)
 	for _, v := range hike {
 		hikeMap[position{x: v.x, y: v.y}] = v.next
 	}
-	for y := 0; y < height; y++ {
+	for y := starty; y < endy; y++ {
 		var line []byte
-		for x := 0; x < width; x++ {
+		for x := startx; x < endx; x++ {
 			dir, ok := hikeMap[position{x: x, y: y}]
 			if ok {
 				line = append(line, dirToByte(dir))
@@ -215,7 +278,7 @@ func printHike(hike []point) {
 			line = append(line, '.')
 
 		}
-		println(string(line))
+		fmt.Fprintln(out, string(line))
 	}
 
 }
@@ -340,7 +403,7 @@ func noWrongHorizontalWay(direction position, neighbours map[int]point) map[int]
 	return without
 }
 
-func bestDirection(direction position, neighbours map[int]point) map[int]point {
+func bestDirection(direction position, neighbours map[int]point, retry bool) map[int]point {
 	if len(neighbours) == 1 {
 		return neighbours
 	}
@@ -359,6 +422,7 @@ func bestDirection(direction position, neighbours map[int]point) map[int]point {
 
 	// no good direction available
 	// go in the bad direction that moves us away the least
+	// TODO: take into account retry here too?
 
 	if direction.x >= 0 && !okRIGHT && direction.y >= 0 && !okDOWN {
 		if X < Y {
@@ -397,6 +461,7 @@ func bestDirection(direction position, neighbours map[int]point) map[int]point {
 	}
 
 	// exactly one good direction available, take it.
+	// TODO: take into account retry here too?
 
 	if direction.x >= 0 && okRIGHT && (direction.y >= 0 && !okDOWN || direction.y <= 0 && !okUP) {
 		delete(without, UP)
@@ -428,7 +493,7 @@ func bestDirection(direction position, neighbours map[int]point) map[int]point {
 
 	// two good directions available. Take the one that gets us the closest.
 
-	if X >= Y {
+	if X >= Y && !retry {
 		if direction.x >= 0 && okRIGHT {
 			delete(without, UP)
 			delete(without, DOWN)
