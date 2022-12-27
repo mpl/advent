@@ -19,11 +19,11 @@ type position struct {
 }
 
 type point struct {
-	x        int
-	y        int
-	z        int
-	next     int
-	decision int
+	x         int
+	y         int
+	z         int
+	next      int
+	direction int
 }
 
 var (
@@ -39,8 +39,7 @@ var (
 	seen                  = make(map[point]bool)
 )
 
-func main() {
-	flag.Parse()
+func initMap() {
 	var f *os.File
 	var err error
 	if *demo {
@@ -53,16 +52,7 @@ func main() {
 	}
 	defer f.Close()
 	sc := bufio.NewScanner(f)
-
-	debugCount := 0
 	for sc.Scan() {
-		if *debug {
-			if debugCount > 34 {
-				// break
-			}
-		}
-		debugCount++
-
 		l := sc.Text()
 		width = len(l)
 		for k, v := range []byte(l) {
@@ -80,6 +70,12 @@ func main() {
 		}
 		height++
 	}
+}
+
+func main() {
+	flag.Parse()
+
+	initMap()
 
 	if *debug {
 		// printMap(point{})
@@ -87,97 +83,106 @@ func main() {
 
 	zstart, _ := topomap[start]
 	pos := point{x: start.x, y: start.y, z: zstart}
-	vector := direction(pos)
-	prevPos := pos
-	hike = append(hike, pos)
-	retry := false
-	steps := 0
-	for {
-		if steps >= 10000 {
-			println("EMERGENCY BRAKING")
-			break
-		}
-		if pos.x == dest.x && pos.y == dest.y {
-			pos.next = 'X'
-			hike[steps] = pos
-			break
-		}
 
-		z := pos.z
-		canRetry := false
-		nb := neighbours(pos)
-
-		decision := 0
-
-		noClimbing(z, nb)
-		decision++
-
-		nb = noFalling(z, nb)
-		decision++
-
-		nb = noBackTracking(prevPos, nb)
-		decision++
-
-		nb = goHigher(nb)
-		decision++
-
-		// nb = noWrongVerticalWay(vector, nb)
-		decision++
-
-		// nb = noWrongHorizontalWay(vector, nb)
-		decision++
-
-		if len(nb) > 1 {
-			canRetry = true
-		}
-		nb = bestDirection(vector, nb, retry)
-		retry = false
-		decision++
-		_ = decision
-
-		if *debug {
-			// println("STEP", steps, "DIRECTIONS LEFT:", len(nb))
-		}
-		if len(nb) != 1 {
-			panic("NOPE")
-		}
-
-		prevPos = pos
-		var next int
-		for k, v := range nb {
-			next = k
-			pos = v
-			break
-		}
-		prevPos.next = next
-		hike[steps] = prevPos
-
-		if *debug {
-			if steps > 45 {
-				println(steps, prevPos.x, prevPos.y, string(dirToByte(next)), pos.x, pos.y)
-			}
-		}
-		if _, ok := seen[pos]; ok {
-			if *debug {
-				println(steps, "CYCLE DETECTED ON", pos.x, pos.y)
-				printMap(point{x: pos.x, y: pos.y})
-				printHike(hike, point{x: pos.x, y: pos.y})
-			}
-			if !canRetry {
-				break
-			}
-			retry = true
-		}
-		seen[pos] = true
-
-		hike = append(hike, pos)
-		vector = direction(pos)
-		steps++
+	hike, err := visit(pos)
+	if err != nil {
+		println(err)
 	}
 
 	printHike(hike, point{})
-	println("STEPS: ", steps)
+	println("STEPS: ", len(hike))
+}
 
+/*
+TODO:
+
+func visit(apoint, from point, directionmaybe point, bestHikeSofar) (hike []point, err error) {
+  - get neighbours
+  - remove falls,
+  - remove climbing,
+  - remove backtracking,
+  - sort the rest by best direction
+    for 1,2,3 nb {
+    if hike, err := visit(1, fromhere)
+    if err != nil {
+    if diag entre 1 et 2 occupée visit(2)
+    if err != nil {
+    if diag entre 2 et 3 occupée visit(3)
+    }
+    continue
+    }
+    if diag entre 1 et 2 occupée visit(2)
+    if err != nil {
+    ...
+    }
+    if diag entre 2 et 3 occupée visit(3)
+    if err != nil {
+    ...
+    }
+    }
+    }
+*/
+
+// TODO: optimizations to fail faster
+func visit(pos point) (hike []point, err error) {
+
+	if pos.x == dest.x && pos.y == dest.y {
+		pos.next = 'X'
+		return []point{pos}, nil
+	}
+
+	nb := neighbours(pos)
+
+	noClimbing(pos.z, nb)
+	nb = noFalling(pos.z, nb)
+	// nb = noBackTracking(prev, nb)
+	notTwice(nb)
+
+	if len(nb) == 0 {
+		return nil, fmt.Errorf("dead end at %d, %d", pos.x, pos.y)
+	}
+
+	sorted := higher(pos.z, nb)
+	sortByDirection(pos, nb, &sorted)
+
+	fewestSteps := 0
+	oneDirection := 0
+	var bestHike []point
+	for i, v := range sorted {
+		posTried, ok := nb[v]
+		if !ok {
+			panic("UNEXPECTED UNFOUND POS")
+		}
+		hike, err := visit(posTried)
+		seen[posTried] = true
+		if err != nil {
+			if *debug {
+				println(fmt.Sprintf("route %d, starting from %d, %d, direction %d: %v", i, pos.x, pos.y, v, err))
+			}
+			continue
+		}
+		if len(hike) > 0 && len(hike) < fewestSteps {
+			oneDirection = v
+			fewestSteps = len(hike)
+			bestHike = hike
+		}
+		// TODO: do not try all the routes
+	}
+
+	if *debug {
+		println(fmt.Sprintf("best route segment from %d, %d: %d, in %d steps", pos.x, pos.y, oneDirection, fewestSteps))
+	}
+
+	return append([]point{pos}, bestHike...), nil
+}
+
+// not thread safe
+func notTwice(nb map[int]point) {
+	for k, v := range nb {
+		if _, ok := seen[v]; ok {
+			delete(nb, k)
+		}
+	}
 }
 
 /*
@@ -325,6 +330,7 @@ func noClimbing(currentZ int, neighbours map[int]point) {
 	}
 }
 
+// TODO: do not copy
 func noFalling(currentZ int, neighbours map[int]point) map[int]point {
 	withoutFalls := make(map[int]point)
 	for k, v := range neighbours {
@@ -336,6 +342,7 @@ func noFalling(currentZ int, neighbours map[int]point) map[int]point {
 	return withoutFalls
 }
 
+// TODO: do not copy
 func noBackTracking(previous point, neighbours map[int]point) map[int]point {
 	withoutBackTracking := make(map[int]point)
 	for k, v := range neighbours {
@@ -347,22 +354,14 @@ func noBackTracking(previous point, neighbours map[int]point) map[int]point {
 	return withoutBackTracking
 }
 
-func goHigher(neighbours map[int]point) map[int]point {
-	highest := 0
-	without := make(map[int]point)
+func higher(currentZ int, neighbours map[int]point) []int {
+	var elevated []int
 	for k, v := range neighbours {
-		if v.z > highest {
-			highest = v.z
-		}
-		without[k] = v
-	}
-
-	for k, v := range without {
-		if v.z < highest {
-			delete(without, k)
+		if v.z > currentZ {
+			elevated = append(elevated, k)
 		}
 	}
-	return without
+	return elevated
 }
 
 func noWrongVerticalWay(direction position, neighbours map[int]point) map[int]point {
@@ -403,150 +402,123 @@ func noWrongHorizontalWay(direction position, neighbours map[int]point) map[int]
 	return without
 }
 
-/*
-TODO:
+func appendIfExists(sorted *[]int, neighbours map[int]point, direction ...int) {
+	for _, d := range direction {
+		if _, ok := neighbours[d]; ok {
+			*sorted = append(*sorted, d)
+		}
+	}
+}
 
-func visit(apoint, from point, directionmaybe point, bestHikeSofar) (hike []point, err error) {
-  - get neighbours
-  - remove falls,
-  - remove climbing,
-  - remove backtracking,
-  - sort the rest by best direction
-    for 1,2,3 nb {
-    if hike, err := visit(1, fromhere)
-    if err != nil {
-    if diag entre 1 et 2 occupée visit(2)
-    if err != nil {
-    if diag entre 2 et 3 occupée visit(3)
-    }
-    continue
-    }
-    if diag entre 1 et 2 occupée visit(2)
-    if err != nil {
-    ...
-    }
-    if diag entre 2 et 3 occupée visit(3)
-    if err != nil {
-    ...
-    }
-    }
-    }
-*/
-func bestDirection(direction position, neighbours map[int]point, retry bool) map[int]point {
+func sortByDirection(pos point, neighbours map[int]point, sorted *[]int) {
 	if len(neighbours) == 1 {
-		return neighbours
+		for k, _ := range neighbours {
+			*sorted = append(*sorted, k)
+			return
+		}
 	}
 
-	without := make(map[int]point)
+	lower := make(map[int]point)
 	for k, v := range neighbours {
-		without[k] = v
+		lower[k] = v
+	}
+	// the higher elevation one(s) are already a priority, so we only sort the ones
+	// that are left, on the same elevation.
+
+	for _, v := range *sorted {
+		delete(lower, v)
 	}
 
-	_, okLEFT := neighbours[LEFT]
-	_, okRIGHT := neighbours[RIGHT]
-	_, okUP := neighbours[UP]
-	_, okDOWN := neighbours[DOWN]
+	direction := direction(pos)
+	_, okLEFT := lower[LEFT]
+	_, okRIGHT := lower[RIGHT]
+	_, okUP := lower[UP]
+	_, okDOWN := lower[DOWN]
 	X := math.Abs(float64(direction.x))
 	Y := math.Abs(float64(direction.y))
 
 	// no good direction available
 	// go in the bad direction that moves us away the least
-	// TODO: take into account retry here too?
 
 	if direction.x >= 0 && !okRIGHT && direction.y >= 0 && !okDOWN {
 		if X < Y {
-			delete(without, UP)
-			return without
+			appendIfExists(sorted, lower, LEFT, UP)
+			return
 		}
-		delete(without, LEFT)
-		return without
+		appendIfExists(sorted, lower, UP, LEFT)
+		return
 	}
 
 	if direction.x >= 0 && !okRIGHT && direction.y <= 0 && !okUP {
 		if X < Y {
-			delete(without, DOWN)
-			return without
+			appendIfExists(sorted, lower, LEFT, DOWN)
+			return
 		}
-		delete(without, LEFT)
-		return without
+		appendIfExists(sorted, lower, DOWN, LEFT)
+		return
 	}
 
 	if direction.x <= 0 && !okLEFT && direction.y <= 0 && !okUP {
 		if X < Y {
-			delete(without, DOWN)
-			return without
+			appendIfExists(sorted, lower, RIGHT, DOWN)
+			return
 		}
-		delete(without, RIGHT)
-		return without
+		appendIfExists(sorted, lower, DOWN, RIGHT)
+		return
 	}
 
 	if direction.x <= 0 && !okLEFT && direction.y >= 0 && !okDOWN {
 		if X < Y {
-			delete(without, UP)
-			return without
+			appendIfExists(sorted, lower, RIGHT, UP)
+			return
 		}
-		delete(without, RIGHT)
-		return without
+		appendIfExists(sorted, lower, UP, RIGHT)
+		return
 	}
 
-	// exactly one good direction available, take it.
-	// TODO: take into account retry here too?
+	// exactly one good direction available, prioritize it.
 
 	if direction.x >= 0 && okRIGHT && (direction.y >= 0 && !okDOWN || direction.y <= 0 && !okUP) {
-		delete(without, UP)
-		delete(without, DOWN)
-		delete(without, LEFT)
-		return without
+		appendIfExists(sorted, lower, RIGHT, UP, LEFT, DOWN)
+		return
 	}
 
 	if direction.x <= 0 && okLEFT && (direction.y >= 0 && !okDOWN || direction.y <= 0 && !okUP) {
-		delete(without, UP)
-		delete(without, DOWN)
-		delete(without, RIGHT)
-		return without
+		appendIfExists(sorted, lower, LEFT, UP, RIGHT, DOWN)
+		return
 	}
 
 	if direction.y >= 0 && okDOWN && (direction.x >= 0 && !okRIGHT || direction.x <= 0 && !okLEFT) {
-		delete(without, UP)
-		delete(without, RIGHT)
-		delete(without, LEFT)
-		return without
+		appendIfExists(sorted, lower, DOWN, LEFT, UP, RIGHT)
+		return
 	}
 
 	if direction.y <= 0 && okUP && (direction.x >= 0 && !okRIGHT || direction.x <= 0 && !okLEFT) {
-		delete(without, DOWN)
-		delete(without, RIGHT)
-		delete(without, LEFT)
-		return without
+		appendIfExists(sorted, lower, UP, DOWN, LEFT, RIGHT)
+		return
 	}
 
-	// two good directions available. Take the one that gets us the closest.
+	// two good directions available. Prioritize the one that gets us the closest.
 
-	if X >= Y && !retry {
+	if X >= Y {
 		if direction.x >= 0 && okRIGHT {
-			delete(without, UP)
-			delete(without, DOWN)
-			delete(without, LEFT)
-			return without
+			appendIfExists(sorted, lower, RIGHT, UP, LEFT, DOWN)
+			return
 		}
 		if direction.x <= 0 && okLEFT {
-			delete(without, UP)
-			delete(without, DOWN)
-			delete(without, RIGHT)
-			return without
+			appendIfExists(sorted, lower, LEFT, RIGHT, UP, DOWN)
+			return
 		}
 	}
 	if direction.y >= 0 && okDOWN {
-		delete(without, UP)
-		delete(without, RIGHT)
-		delete(without, LEFT)
-		return without
+		appendIfExists(sorted, lower, DOWN, LEFT, UP, RIGHT)
+		return
 	}
 	if direction.y <= 0 && okUP {
-		delete(without, DOWN)
-		delete(without, RIGHT)
-		delete(without, LEFT)
-		return without
+		appendIfExists(sorted, lower, UP, DOWN, LEFT, RIGHT)
+		return
 	}
-	return nil
+
+	panic("NO SORTING DONE")
+	return
 }
