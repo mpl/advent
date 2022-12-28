@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -11,6 +13,7 @@ import (
 )
 
 var debug = flag.Bool("debug", false, `debug mode`)
+var verbose = flag.Bool("verbose", false, `verbose mode`)
 var demo = flag.Bool("demo", false, `use demo input`)
 
 type position struct {
@@ -30,13 +33,12 @@ var (
 	start                 position
 	dest                  position
 	topomap               = make(map[position]int)
-	DOWN, UP, RIGHT, LEFT = 1, 2, 3, 4
+	RIGHT, UP, LEFT, DOWN = 1, 2, 3, 4
 	bottom                = int('a')
 	top                   = int('z')
 	width                 = 0
 	height                = 0
 	hike                  []point
-	seen                  = make(map[point]bool)
 )
 
 func initMap() {
@@ -84,9 +86,10 @@ func main() {
 	zstart, _ := topomap[start]
 	pos := point{x: start.x, y: start.y, z: zstart}
 
-	hike, err := visit(pos)
+	seen := make(map[point]bool)
+	hike, err := visit(pos, seen, 0)
 	if err != nil {
-		println(err)
+		println(err.Error())
 	}
 
 	printHike(hike, point{})
@@ -123,9 +126,20 @@ func visit(apoint, from point, directionmaybe point, bestHikeSofar) (hike []poin
     }
 */
 
-// TODO: optimizations to fail faster
-func visit(pos point) (hike []point, err error) {
+func copySeen(seen map[point]bool) map[point]bool {
+	cps := make(map[point]bool)
+	for k, v := range seen {
+		cps[k] = v
+	}
+	return cps
+}
 
+// TODO: optimizations to fail faster
+func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) {
+	if depth == 35 {
+		return nil, errors.New("CRITICAL DEPTH")
+	}
+	seen[pos] = true
 	if pos.x == dest.x && pos.y == dest.y {
 		pos.next = 'X'
 		return []point{pos}, nil
@@ -136,27 +150,45 @@ func visit(pos point) (hike []point, err error) {
 	noClimbing(pos.z, nb)
 	nb = noFalling(pos.z, nb)
 	// nb = noBackTracking(prev, nb)
-	notTwice(nb)
+	notTwice(nb, seen)
+
+	if *debug {
+		println(depth, pos.x, pos.y, "NEIGHBOURS: ", len(nb))
+	}
 
 	if len(nb) == 0 {
 		return nil, fmt.Errorf("dead end at %d, %d", pos.x, pos.y)
 	}
 
-	sorted := higher(pos.z, nb)
-	sortByDirection(pos, nb, &sorted)
+	above := higher(pos.z, nb)
+	if *debug {
+		msh, _ := json.Marshal(above)
+		msh2, _ := json.Marshal(nb)
+		println(depth, pos.x, pos.y, "ABOVE: ", string(msh), "BELOW: ", string(msh2))
+	}
+	sorted := append(sortByDirection(pos, above), sortByDirection(pos, nb)...)
+	if *debug {
+		msh, _ := json.Marshal(sorted)
+		println(depth, pos.x, pos.y, "SORTED: ", string(msh))
+	}
 
-	fewestSteps := 0
+	// TODO: do better
+	fewestSteps := 1000000000
 	oneDirection := 0
 	var bestHike []point
 	for i, v := range sorted {
 		posTried, ok := nb[v]
 		if !ok {
-			panic("UNEXPECTED UNFOUND POS")
+			posTried, ok = above[v]
+			if !ok {
+				panic("UNEXPECTED UNFOUND POS")
+			}
 		}
-		hike, err := visit(posTried)
-		seen[posTried] = true
+		cps := copySeen(seen)
+		hike, err := visit(posTried, cps, depth+1)
 		if err != nil {
 			if *debug {
+				_ = i
 				println(fmt.Sprintf("route %d, starting from %d, %d, direction %d: %v", i, pos.x, pos.y, v, err))
 			}
 			continue
@@ -166,18 +198,30 @@ func visit(pos point) (hike []point, err error) {
 			fewestSteps = len(hike)
 			bestHike = hike
 		}
+		if (*debug || *verbose) && depth == 0 {
+			printHike(hike, point{})
+			println("IN ", len(hike), " STEPS")
+		}
 		// TODO: do not try all the routes
+		// break
+	}
+
+	// TODO: how to still printHike to dead end, for debugging?
+
+	if bestHike == nil {
+		return nil, fmt.Errorf("dead end 2 at %d, %d", pos.x, pos.y)
 	}
 
 	if *debug {
 		println(fmt.Sprintf("best route segment from %d, %d: %d, in %d steps", pos.x, pos.y, oneDirection, fewestSteps))
 	}
 
+	pos.next = oneDirection
 	return append([]point{pos}, bestHike...), nil
 }
 
 // not thread safe
-func notTwice(nb map[int]point) {
+func notTwice(nb map[int]point, seen map[point]bool) {
 	for k, v := range nb {
 		if _, ok := seen[v]; ok {
 			delete(nb, k)
@@ -354,14 +398,15 @@ func noBackTracking(previous point, neighbours map[int]point) map[int]point {
 	return withoutBackTracking
 }
 
-func higher(currentZ int, neighbours map[int]point) []int {
-	var elevated []int
+func higher(currentZ int, neighbours map[int]point) map[int]point {
+	above := make(map[int]point)
 	for k, v := range neighbours {
 		if v.z > currentZ {
-			elevated = append(elevated, k)
+			above[k] = v
+			delete(neighbours, k)
 		}
 	}
-	return elevated
+	return above
 }
 
 func noWrongVerticalWay(direction position, neighbours map[int]point) map[int]point {
@@ -402,38 +447,29 @@ func noWrongHorizontalWay(direction position, neighbours map[int]point) map[int]
 	return without
 }
 
-func appendIfExists(sorted *[]int, neighbours map[int]point, direction ...int) {
+func appendIfExists(neighbours map[int]point, direction ...int) []int {
+	var sorted []int
 	for _, d := range direction {
 		if _, ok := neighbours[d]; ok {
-			*sorted = append(*sorted, d)
+			sorted = append(sorted, d)
 		}
 	}
+	return sorted
 }
 
-func sortByDirection(pos point, neighbours map[int]point, sorted *[]int) {
-	if len(neighbours) == 1 {
-		for k, _ := range neighbours {
-			*sorted = append(*sorted, k)
-			return
+func sortByDirection(pos point, nb map[int]point) []int {
+	var sorted []int
+	if len(nb) == 1 {
+		for k, _ := range nb {
+			return append(sorted, k)
 		}
-	}
-
-	lower := make(map[int]point)
-	for k, v := range neighbours {
-		lower[k] = v
-	}
-	// the higher elevation one(s) are already a priority, so we only sort the ones
-	// that are left, on the same elevation.
-
-	for _, v := range *sorted {
-		delete(lower, v)
 	}
 
 	direction := direction(pos)
-	_, okLEFT := lower[LEFT]
-	_, okRIGHT := lower[RIGHT]
-	_, okUP := lower[UP]
-	_, okDOWN := lower[DOWN]
+	_, okLEFT := nb[LEFT]
+	_, okRIGHT := nb[RIGHT]
+	_, okUP := nb[UP]
+	_, okDOWN := nb[DOWN]
 	X := math.Abs(float64(direction.x))
 	Y := math.Abs(float64(direction.y))
 
@@ -442,83 +478,83 @@ func sortByDirection(pos point, neighbours map[int]point, sorted *[]int) {
 
 	if direction.x >= 0 && !okRIGHT && direction.y >= 0 && !okDOWN {
 		if X < Y {
-			appendIfExists(sorted, lower, LEFT, UP)
-			return
+			return appendIfExists(nb, LEFT, UP)
+
 		}
-		appendIfExists(sorted, lower, UP, LEFT)
-		return
+		return appendIfExists(nb, UP, LEFT)
+
 	}
 
 	if direction.x >= 0 && !okRIGHT && direction.y <= 0 && !okUP {
 		if X < Y {
-			appendIfExists(sorted, lower, LEFT, DOWN)
-			return
+			return appendIfExists(nb, LEFT, DOWN)
+
 		}
-		appendIfExists(sorted, lower, DOWN, LEFT)
-		return
+		return appendIfExists(nb, DOWN, LEFT)
+
 	}
 
 	if direction.x <= 0 && !okLEFT && direction.y <= 0 && !okUP {
 		if X < Y {
-			appendIfExists(sorted, lower, RIGHT, DOWN)
-			return
+			return appendIfExists(nb, RIGHT, DOWN)
+
 		}
-		appendIfExists(sorted, lower, DOWN, RIGHT)
-		return
+		return appendIfExists(nb, DOWN, RIGHT)
+
 	}
 
 	if direction.x <= 0 && !okLEFT && direction.y >= 0 && !okDOWN {
 		if X < Y {
-			appendIfExists(sorted, lower, RIGHT, UP)
-			return
+			return appendIfExists(nb, RIGHT, UP)
+
 		}
-		appendIfExists(sorted, lower, UP, RIGHT)
-		return
+		return appendIfExists(nb, UP, RIGHT)
+
 	}
 
 	// exactly one good direction available, prioritize it.
 
 	if direction.x >= 0 && okRIGHT && (direction.y >= 0 && !okDOWN || direction.y <= 0 && !okUP) {
-		appendIfExists(sorted, lower, RIGHT, UP, LEFT, DOWN)
-		return
+		return appendIfExists(nb, RIGHT, UP, LEFT, DOWN)
+
 	}
 
 	if direction.x <= 0 && okLEFT && (direction.y >= 0 && !okDOWN || direction.y <= 0 && !okUP) {
-		appendIfExists(sorted, lower, LEFT, UP, RIGHT, DOWN)
-		return
+		return appendIfExists(nb, LEFT, UP, RIGHT, DOWN)
+
 	}
 
 	if direction.y >= 0 && okDOWN && (direction.x >= 0 && !okRIGHT || direction.x <= 0 && !okLEFT) {
-		appendIfExists(sorted, lower, DOWN, LEFT, UP, RIGHT)
-		return
+		return appendIfExists(nb, DOWN, LEFT, UP, RIGHT)
+
 	}
 
 	if direction.y <= 0 && okUP && (direction.x >= 0 && !okRIGHT || direction.x <= 0 && !okLEFT) {
-		appendIfExists(sorted, lower, UP, DOWN, LEFT, RIGHT)
-		return
+		return appendIfExists(nb, UP, DOWN, LEFT, RIGHT)
+
 	}
 
 	// two good directions available. Prioritize the one that gets us the closest.
 
 	if X >= Y {
 		if direction.x >= 0 && okRIGHT {
-			appendIfExists(sorted, lower, RIGHT, UP, LEFT, DOWN)
-			return
+			return appendIfExists(nb, RIGHT, UP, LEFT, DOWN)
+
 		}
 		if direction.x <= 0 && okLEFT {
-			appendIfExists(sorted, lower, LEFT, RIGHT, UP, DOWN)
-			return
+			return appendIfExists(nb, LEFT, RIGHT, UP, DOWN)
+
 		}
 	}
 	if direction.y >= 0 && okDOWN {
-		appendIfExists(sorted, lower, DOWN, LEFT, UP, RIGHT)
-		return
+		return appendIfExists(nb, DOWN, LEFT, UP, RIGHT)
+
 	}
 	if direction.y <= 0 && okUP {
-		appendIfExists(sorted, lower, UP, DOWN, LEFT, RIGHT)
-		return
+		return appendIfExists(nb, UP, DOWN, LEFT, RIGHT)
+
 	}
 
 	panic("NO SORTING DONE")
-	return
+
 }
