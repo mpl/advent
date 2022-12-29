@@ -41,7 +41,7 @@ var (
 	height                = 0
 	hike                  []point
 	debugX, debugY        = 0, 0
-	depthDebug            = 34
+	depthDebug            = 27
 )
 
 func initMap() {
@@ -182,6 +182,7 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 		}
 
 		if len(hike) == 0 || len(hike) >= fewestSteps {
+			// TODO: really?
 			continue
 		}
 
@@ -197,14 +198,31 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 		}
 
 		if len(sorted) == 3 {
-			// TODO: that's too strict, but maybe it will work for this specific input
-			break
+			// TODO: do better
+			dir2, _ := nb[sorted[i+1]]
+			println(fmt.Sprintf("%d IS BRANCHING3 FOR %d,%d and %d,%d", depth, posTried.x, posTried.y, dir2.x, dir2.y))
+			if isBranch(posTried, dir2) {
+				continue
+			}
+			if i > 0 {
+				break
+			}
+			dir3, _ := nb[sorted[i+2]]
+			println(fmt.Sprintf("%d IS BRANCHING3 FOR %d,%d and %d,%d", depth, posTried.x, posTried.y, dir3.x, dir3.y))
+			if isBranch(posTried, dir3) {
+				continue
+			}
+
 		}
 
 		if len(sorted) == 2 {
 			dir1, _ := nb[sorted[0]]
 			dir2, _ := nb[sorted[1]]
 			if dir1.x == dir2.x || dir1.y == dir2.y {
+				continue
+			}
+			println(fmt.Sprintf("%d IS BRANCHING2 FOR %d,%d and %d,%d", depth, dir1.x, dir1.y, dir2.x, dir2.y))
+			if isBranch(dir1, dir2) {
 				continue
 			}
 			// TODO: that's too strict, but maybe it will work for this specific input
@@ -223,6 +241,34 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 
 	pos.next = oneDirection
 	return append([]point{pos}, bestHike...), nil
+}
+
+func isBranch(dir1, dir2 point) bool {
+	// we assume dir1 and dir2 are perpendicular
+	dir1X := math.Abs(float64(dir1.x))
+	dir1Y := math.Abs(float64(dir1.y))
+	dir2X := math.Abs(float64(dir2.x))
+	dir2Y := math.Abs(float64(dir2.y))
+	if dir1.z != dir2.z {
+		println(fmt.Sprintf("COMPARING Z of %d,%d and %d,%d", dir1.x, dir1.y, dir2.x, dir2.y))
+	}
+	var pos position
+	if dir1X > dir2X {
+		pos.x = dir1.x
+	} else {
+		pos.x = dir2.x
+	}
+	if dir1Y > dir2Y {
+		pos.y = dir1.y
+	} else {
+		pos.y = dir2.y
+	}
+	z, ok := topomap[pos]
+	if !ok {
+		panic("AIAIAIAI")
+	}
+	// lower, or unclimbable == obstacle
+	return (z < dir1.z || z > dir1.z+1) && (z < dir2.z || z > dir2.z+1)
 }
 
 // not thread safe
