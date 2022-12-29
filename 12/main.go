@@ -10,6 +10,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"time"
 )
 
 var debug = flag.Bool("debug", false, `debug mode`)
@@ -39,6 +40,8 @@ var (
 	width                 = 0
 	height                = 0
 	hike                  []point
+	debugX, debugY        = 0, 0
+	depthDebug            = 34
 )
 
 func initMap() {
@@ -83,6 +86,9 @@ func main() {
 		// printMap(point{})
 	}
 
+	println("STARTING AT ", start.x, start.y)
+	dest = position{x: 34, y: 20}
+
 	zstart, _ := topomap[start]
 	pos := point{x: start.x, y: start.y, z: zstart}
 
@@ -96,36 +102,6 @@ func main() {
 	println("STEPS: ", len(hike))
 }
 
-/*
-TODO:
-
-func visit(apoint, from point, directionmaybe point, bestHikeSofar) (hike []point, err error) {
-  - get neighbours
-  - remove falls,
-  - remove climbing,
-  - remove backtracking,
-  - sort the rest by best direction
-    for 1,2,3 nb {
-    if hike, err := visit(1, fromhere)
-    if err != nil {
-    if diag entre 1 et 2 occupée visit(2)
-    if err != nil {
-    if diag entre 2 et 3 occupée visit(3)
-    }
-    continue
-    }
-    if diag entre 1 et 2 occupée visit(2)
-    if err != nil {
-    ...
-    }
-    if diag entre 2 et 3 occupée visit(3)
-    if err != nil {
-    ...
-    }
-    }
-    }
-*/
-
 func copySeen(seen map[point]bool) map[point]bool {
 	cps := make(map[point]bool)
 	for k, v := range seen {
@@ -136,23 +112,34 @@ func copySeen(seen map[point]bool) map[point]bool {
 
 // TODO: optimizations to fail faster
 func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) {
-	if depth == 35 {
+	if depth == 50 {
 		return nil, errors.New("CRITICAL DEPTH")
 	}
+
+	if depth > depthDebug {
+		time.Sleep(time.Second)
+	}
+
+	if pos.x == 30 && pos.y < 14 {
+		// log.Fatal("BIM BAM BOUM")
+	}
+
 	seen[pos] = true
 	if pos.x == dest.x && pos.y == dest.y {
 		pos.next = 'X'
+		if *verbose || *debug {
+			println("Found dest ", dest.x, dest.y, "in ", depth, "steps")
+		}
 		return []point{pos}, nil
 	}
 
 	nb := neighbours(pos)
 
-	noClimbing(pos.z, nb)
-	nb = noFalling(pos.z, nb)
-	// nb = noBackTracking(prev, nb)
+	obstacle := noClimbing(pos.z, nb)
+	obstacle = append(obstacle, noFalling(pos.z, nb)...)
 	notTwice(nb, seen)
 
-	if *debug {
+	if *debug || pos.x == debugX || pos.y == debugY || depth > depthDebug {
 		println(depth, pos.x, pos.y, "NEIGHBOURS: ", len(nb))
 	}
 
@@ -161,13 +148,13 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 	}
 
 	above := higher(pos.z, nb)
-	if *debug {
+	if *debug || pos.x == debugX || pos.y == debugY || depth > depthDebug {
 		msh, _ := json.Marshal(above)
 		msh2, _ := json.Marshal(nb)
 		println(depth, pos.x, pos.y, "ABOVE: ", string(msh), "BELOW: ", string(msh2))
 	}
-	sorted := append(sortByDirection(pos, above), sortByDirection(pos, nb)...)
-	if *debug {
+	sorted := append(sortByDirection(pos, above, obstacle), sortByDirection(pos, nb, obstacle)...)
+	if *debug || pos.x == debugX || pos.y == debugY || depth > depthDebug {
 		msh, _ := json.Marshal(sorted)
 		println(depth, pos.x, pos.y, "SORTED: ", string(msh))
 	}
@@ -193,26 +180,44 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 			}
 			continue
 		}
-		if len(hike) > 0 && len(hike) < fewestSteps {
-			oneDirection = v
-			fewestSteps = len(hike)
-			bestHike = hike
-		}
-		if (*debug || *verbose) && depth == 0 {
-			printHike(hike, point{})
-			println("IN ", len(hike), " STEPS")
-		}
-		// TODO: do not try all the routes
-		// break
-	}
 
-	// TODO: how to still printHike to dead end, for debugging?
+		if len(hike) == 0 || len(hike) >= fewestSteps {
+			continue
+		}
+
+		// note as best hike so far
+		oneDirection = v
+		fewestSteps = len(hike)
+		bestHike = hike
+
+		// should we still attempt other routes?
+
+		if i == len(sorted)-1 {
+			break
+		}
+
+		if len(sorted) == 3 {
+			// TODO: that's too strict, but maybe it will work for this specific input
+			break
+		}
+
+		if len(sorted) == 2 {
+			dir1, _ := nb[sorted[0]]
+			dir2, _ := nb[sorted[1]]
+			if dir1.x == dir2.x || dir1.y == dir2.y {
+				continue
+			}
+			// TODO: that's too strict, but maybe it will work for this specific input
+			break
+		}
+
+	}
 
 	if bestHike == nil {
 		return nil, fmt.Errorf("dead end 2 at %d, %d", pos.x, pos.y)
 	}
 
-	if *debug {
+	if *debug || pos.x == debugX || pos.y == debugY || depth > depthDebug {
 		println(fmt.Sprintf("best route segment from %d, %d: %d, in %d steps", pos.x, pos.y, oneDirection, fewestSteps))
 	}
 
@@ -228,14 +233,6 @@ func notTwice(nb map[int]point, seen map[point]bool) {
 		}
 	}
 }
-
-/*
-v..v<<<<
->v.vv<<^
-.>vv>E^^
-..v>>>^^
-..>>>>>^
-*/
 
 func printPoints(p map[int]point) {
 	for k, v := range p {
@@ -285,7 +282,6 @@ func dirToByte(dir int) byte {
 }
 
 func printHike(hike []point, center point) {
-
 	startx, starty := 0, 0
 	endx, endy := width, height
 	if center.x != 0 && center.y != 0 {
@@ -306,7 +302,8 @@ func printHike(hike []point, center point) {
 		out = os.Stdout
 	} else {
 		var err error
-		out, err = os.Create("./output.txt")
+		filename := "./output.txt"
+		out, err = os.Create(filename)
 		if err != nil {
 			panic(err)
 		}
@@ -364,26 +361,26 @@ func neighbours(pos point) map[int]point {
 	return points
 }
 
-func noClimbing(currentZ int, neighbours map[int]point) {
-	// println(currentZ)
+func noClimbing(currentZ int, neighbours map[int]point) []int {
+	var obstacle []int
 	for k, v := range neighbours {
-		// println("VS", v.z)
 		if v.z > currentZ+1 {
+			obstacle = append(obstacle, k)
 			delete(neighbours, k)
 		}
 	}
+	return obstacle
 }
 
-// TODO: do not copy
-func noFalling(currentZ int, neighbours map[int]point) map[int]point {
-	withoutFalls := make(map[int]point)
+func noFalling(currentZ int, neighbours map[int]point) []int {
+	var obstacle []int
 	for k, v := range neighbours {
 		if v.z < currentZ {
-			continue
+			obstacle = append(obstacle, k)
+			delete(neighbours, k)
 		}
-		withoutFalls[k] = v
 	}
-	return withoutFalls
+	return obstacle
 }
 
 // TODO: do not copy
@@ -457,8 +454,11 @@ func appendIfExists(neighbours map[int]point, direction ...int) []int {
 	return sorted
 }
 
-func sortByDirection(pos point, nb map[int]point) []int {
+func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 	var sorted []int
+	if len(nb) == 0 {
+		return sorted
+	}
 	if len(nb) == 1 {
 		for k, _ := range nb {
 			return append(sorted, k)
@@ -473,43 +473,47 @@ func sortByDirection(pos point, nb map[int]point) []int {
 	X := math.Abs(float64(direction.x))
 	Y := math.Abs(float64(direction.y))
 
+	if pos.x == 30 && pos.y == 15 {
+		// println(X, Y)
+		// println(direction.x, direction.y)
+		// println(okRIGHT, okUP, okLEFT, okDOWN)
+	}
+
+	// TODO: better heuristics: follow the obstacle?!
+
 	// no good direction available
-	// go in the bad direction that moves us away the least
+	// try going along the obstacle, and not further from it
 
 	if direction.x >= 0 && !okRIGHT && direction.y >= 0 && !okDOWN {
-		if X < Y {
+		// in practice there's only one obstacle at this point
+		if obstacle[0] == DOWN {
 			return appendIfExists(nb, LEFT, UP)
-
 		}
 		return appendIfExists(nb, UP, LEFT)
 
 	}
 
 	if direction.x >= 0 && !okRIGHT && direction.y <= 0 && !okUP {
-		if X < Y {
+		if obstacle[0] == UP {
 			return appendIfExists(nb, LEFT, DOWN)
-
 		}
 		return appendIfExists(nb, DOWN, LEFT)
 
 	}
 
 	if direction.x <= 0 && !okLEFT && direction.y <= 0 && !okUP {
-		if X < Y {
+		if obstacle[0] == UP {
 			return appendIfExists(nb, RIGHT, DOWN)
-
 		}
 		return appendIfExists(nb, DOWN, RIGHT)
 
 	}
 
 	if direction.x <= 0 && !okLEFT && direction.y >= 0 && !okDOWN {
-		if X < Y {
+		if obstacle[0] == DOWN {
 			return appendIfExists(nb, RIGHT, UP)
-
 		}
 		return appendIfExists(nb, UP, RIGHT)
-
 	}
 
 	// exactly one good direction available, prioritize it.
