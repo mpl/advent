@@ -198,6 +198,7 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 		}
 
 		if len(sorted) == 3 {
+			break
 			// TODO: do better
 			dir2, _ := nb[sorted[i+1]]
 			println(fmt.Sprintf("%d IS BRANCHING3 FOR %d,%d and %d,%d", depth, posTried.x, posTried.y, dir2.x, dir2.y))
@@ -525,14 +526,13 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 		// println(okRIGHT, okUP, okLEFT, okDOWN)
 	}
 
-	// TODO: better heuristics: follow the obstacle?!
-
-	// no good direction available
-	// try going along the obstacle, and not further from it
+	// no good direction available.
+	// try going along the obstacle, and not further from it.
+	// otherwise just go in the bad direction that moves us the least possible.
 
 	if direction.x >= 0 && !okRIGHT && direction.y >= 0 && !okDOWN {
-		// in practice there's only one obstacle at this point
-		if obstacle[0] == DOWN {
+		// in practice there's maximum one obstacle at this point
+		if len(obstacle) > 0 && obstacle[0] == DOWN || X < Y {
 			return appendIfExists(nb, LEFT, UP)
 		}
 		return appendIfExists(nb, UP, LEFT)
@@ -540,7 +540,7 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 	}
 
 	if direction.x >= 0 && !okRIGHT && direction.y <= 0 && !okUP {
-		if obstacle[0] == UP {
+		if len(obstacle) > 0 && obstacle[0] == UP || X < Y {
 			return appendIfExists(nb, LEFT, DOWN)
 		}
 		return appendIfExists(nb, DOWN, LEFT)
@@ -548,7 +548,7 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 	}
 
 	if direction.x <= 0 && !okLEFT && direction.y <= 0 && !okUP {
-		if obstacle[0] == UP {
+		if len(obstacle) > 0 && obstacle[0] == UP || X < Y {
 			return appendIfExists(nb, RIGHT, DOWN)
 		}
 		return appendIfExists(nb, DOWN, RIGHT)
@@ -556,7 +556,7 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 	}
 
 	if direction.x <= 0 && !okLEFT && direction.y >= 0 && !okDOWN {
-		if obstacle[0] == DOWN {
+		if len(obstacle) > 0 && obstacle[0] == DOWN || X < Y {
 			return appendIfExists(nb, RIGHT, UP)
 		}
 		return appendIfExists(nb, UP, RIGHT)
