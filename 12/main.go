@@ -41,6 +41,7 @@ var (
 	dest                  position
 	topomap               = make(map[position]int)
 	RIGHT, UP, LEFT, DOWN = 1, 2, 3, 4
+	RU, UL, LD, DR        = 5, 6, 7, 8
 	bottom                = int('a')
 	top                   = int('z')
 	width                 = 0
@@ -122,6 +123,9 @@ func main() {
 		println(err.Error())
 	}
 
+	seenMu.Lock()
+	printSeen("./seen.txt")
+	seenMu.Unlock()
 	printHike(hike, point{})
 	println("STEPS: ", len(hike))
 }
@@ -220,7 +224,7 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 		if err != nil {
 			if *debug || *verbose {
 				_ = i
-				println(fmt.Sprintf("route %d, starting from %d, %d, direction %d: %v", i, pos.x, pos.y, v, err))
+				// println(fmt.Sprintf("route %d, starting from %d, %d, direction %d: %v", i, pos.x, pos.y, v, err))
 			}
 			continue
 		}
@@ -582,6 +586,51 @@ func appendIfExists(neighbours map[int]point, direction ...int) []int {
 	return sorted
 }
 
+func isObstacle(pos, obs point) bool {
+	return obs.z > pos.z+1 || obs.z < pos.z
+}
+
+func isRubbing(pos point, nb map[int]point) (int, bool) {
+	// TODO: maybe isObstacle should compare z of pos to z of diag. not z of nb to z of diag.
+	for k, v := range nb {
+		nb2 := neighbours(v)
+		switch k {
+		case UP, DOWN:
+			l, ok := nb2[LEFT]
+			if ok && isObstacle(v, l) {
+				if k == UP {
+					return UL, true
+				}
+				return LD, true
+			}
+			r, ok := nb2[RIGHT]
+			if ok && isObstacle(v, r) {
+				if k == UP {
+					return RU, true
+				}
+				return DR, true
+			}
+		case RIGHT, LEFT:
+			u, ok := nb2[UP]
+			if ok && isObstacle(v, u) {
+				if k == RIGHT {
+					return RU, true
+				}
+				return UL, true
+			}
+			d, ok := nb2[DOWN]
+			if ok && isObstacle(v, d) {
+				if k == RIGHT {
+					return DR, true
+				}
+				return LD, true
+			}
+
+		}
+	}
+	return 0, false
+}
+
 func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 	var sorted []int
 	if len(nb) == 0 {
@@ -601,11 +650,119 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 	X := math.Abs(float64(direction.x))
 	Y := math.Abs(float64(direction.y))
 
-	if pos.x == 30 && pos.y == 15 {
-		// println(X, Y)
-		// println(direction.x, direction.y)
-		// println(okRIGHT, okUP, okLEFT, okDOWN)
+	// we're touching 2 obstacles, only one direction we can go
+	if len(obstacle) >= 2 {
+		if len(nb) > 1 {
+			panic("SHOULD NOT HAPPEN")
+		}
 	}
+
+	if len(obstacle) == 1 {
+		// not allowed to detach from obstacle if target is on the other side of obstacle
+		switch obstacle[0] {
+		case RIGHT:
+			// target is on the other side obstacle, go along the obstacle in both directions
+			if direction.x > 0 {
+				if direction.y > 0 {
+					return appendIfExists(nb, DOWN, UP)
+				}
+				return appendIfExists(nb, UP, DOWN)
+			}
+			// target is on our side of the obstacle, we are allowed to detach
+			if direction.y > 0 {
+				if X > Y {
+					return appendIfExists(nb, LEFT, DOWN)
+				}
+				return appendIfExists(nb, DOWN, LEFT)
+			}
+			if X > Y {
+				return appendIfExists(nb, LEFT, UP)
+			}
+			return appendIfExists(nb, UP, LEFT)
+		case LEFT:
+			if direction.x < 0 {
+				if direction.y > 0 {
+					return appendIfExists(nb, DOWN, UP)
+				}
+				return appendIfExists(nb, UP, DOWN)
+			}
+			if direction.y > 0 {
+				if X > Y {
+					return appendIfExists(nb, RIGHT, DOWN)
+				}
+				return appendIfExists(nb, DOWN, RIGHT)
+			}
+			if X > Y {
+				return appendIfExists(nb, RIGHT, UP)
+			}
+			return appendIfExists(nb, UP, RIGHT)
+		case UP:
+			if direction.y < 0 {
+				if direction.x > 0 {
+					return appendIfExists(nb, RIGHT, LEFT)
+				}
+				return appendIfExists(nb, LEFT, RIGHT)
+			}
+			if direction.x > 0 {
+				if X > Y {
+					return appendIfExists(nb, RIGHT, DOWN)
+				}
+				return appendIfExists(nb, DOWN, RIGHT)
+			}
+			if X > Y {
+				return appendIfExists(nb, LEFT, DOWN)
+			}
+			return appendIfExists(nb, DOWN, LEFT)
+		case DOWN:
+			if direction.y > 0 {
+				if direction.x > 0 {
+					return appendIfExists(nb, RIGHT, LEFT)
+				}
+				return appendIfExists(nb, LEFT, RIGHT)
+			}
+			if direction.x > 0 {
+				if X > Y {
+					return appendIfExists(nb, RIGHT, UP)
+				}
+				return appendIfExists(nb, UP, RIGHT)
+			}
+			if X > Y {
+				return appendIfExists(nb, LEFT, UP)
+			}
+			return appendIfExists(nb, UP, LEFT)
+		}
+	}
+
+	// TODO: what if we rub two different obstacles?
+	diag, ok := isRubbing(pos, nb)
+	if ok {
+		// not allowed to detach from the obstacle,
+		// unless if it's to go in the right direction
+		switch diag {
+		case RU:
+			if direction.x <= 0 && direction.y >= 0 {
+				return appendIfExists(nb, LEFT, DOWN)
+			}
+			return appendIfExists(nb, RIGHT, UP)
+		case UL:
+			if direction.x >= 0 && direction.y >= 0 {
+				return appendIfExists(nb, DOWN, RIGHT)
+			}
+			return appendIfExists(nb, UP, LEFT)
+		case LD:
+			if direction.x >= 0 && direction.y <= 0 {
+				return appendIfExists(nb, RIGHT, UP)
+			}
+			return appendIfExists(nb, LEFT, DOWN)
+		case DR:
+			if direction.x <= 0 && direction.y <= 0 {
+				return appendIfExists(nb, UP, LEFT)
+			}
+			return appendIfExists(nb, DOWN, RIGHT)
+		}
+	}
+
+	// TODO: clean up below
 
 	// no good direction available.
 	// try going along the obstacle, and not further from it.
