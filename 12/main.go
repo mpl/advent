@@ -10,12 +10,18 @@ import (
 	"log"
 	"math"
 	"os"
+	"sync"
 	"time"
 )
 
-var debug = flag.Bool("debug", false, `debug mode`)
-var verbose = flag.Bool("verbose", false, `verbose mode`)
-var demo = flag.Bool("demo", false, `use demo input`)
+var (
+	debug   = flag.Bool("debug", false, `debug mode`)
+	verbose = flag.Bool("verbose", false, `verbose mode`)
+	demo    = flag.Bool("demo", false, `use demo input`)
+	destX   = flag.Int("destX", 0, `destx`)
+	destY   = flag.Int("destY", 0, `desty`)
+	gseen   = flag.Bool("seen", false, `seen so far`)
+)
 
 type position struct {
 	x int
@@ -41,7 +47,10 @@ var (
 	height                = 0
 	hike                  []point
 	debugX, debugY        = 0, 0
-	depthDebug            = 27
+	depthDebug            = 54
+
+	seenMu     sync.Mutex
+	globalSeen = make(map[position]bool)
 )
 
 func initMap() {
@@ -86,8 +95,23 @@ func main() {
 		// printMap(point{})
 	}
 
+	if *gseen {
+		go func() {
+			time.Sleep(30 * time.Second)
+			seenMu.Lock()
+			printSeen("./seen.txt")
+			seenMu.Unlock()
+			log.Fatal("TIMEOUT")
+		}()
+	}
+
 	println("STARTING AT ", start.x, start.y)
-	dest = position{x: 34, y: 20}
+	if *destX != 0 {
+		dest.x = *destX
+	}
+	if *destY != 0 {
+		dest.y = *destY
+	}
 
 	zstart, _ := topomap[start]
 	pos := point{x: start.x, y: start.y, z: zstart}
@@ -112,17 +136,20 @@ func copySeen(seen map[point]bool) map[point]bool {
 
 // TODO: optimizations to fail faster
 func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) {
-	if depth == 50 {
+	if depth == 10000 {
+		// TODO: is this makeing us loop forever??
+		// yep, ffs.
 		return nil, errors.New("CRITICAL DEPTH")
 	}
 
-	if depth > depthDebug {
+	if *debug && depth > depthDebug {
 		time.Sleep(time.Second)
+		// printMap(pos, "map.txt")
 	}
 
-	if pos.x == 30 && pos.y < 14 {
-		// log.Fatal("BIM BAM BOUM")
-	}
+	seenMu.Lock()
+	globalSeen[position{x: pos.x, y: pos.y}] = true
+	seenMu.Unlock()
 
 	seen[pos] = true
 	if pos.x == dest.x && pos.y == dest.y {
@@ -139,8 +166,8 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 	obstacle = append(obstacle, noFalling(pos.z, nb)...)
 	notTwice(nb, seen)
 
-	if *debug || pos.x == debugX || pos.y == debugY || depth > depthDebug {
-		println(depth, pos.x, pos.y, "NEIGHBOURS: ", len(nb))
+	if *debug && (pos.x == debugX || pos.y == debugY || depth > depthDebug) {
+		// println(depth, pos.x, pos.y, "NEIGHBOURS: ", len(nb))
 	}
 
 	if len(nb) == 0 {
@@ -148,22 +175,39 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 	}
 
 	above := higher(pos.z, nb)
-	if *debug || pos.x == debugX || pos.y == debugY || depth > depthDebug {
+	if *debug && (pos.x == debugX || pos.y == debugY || depth > depthDebug) {
 		msh, _ := json.Marshal(above)
 		msh2, _ := json.Marshal(nb)
-		println(depth, pos.x, pos.y, "ABOVE: ", string(msh), "BELOW: ", string(msh2))
+		_ = msh
+		_ = msh2
+		// println(depth, pos.x, pos.y, "ABOVE: ", string(msh), "BELOW: ", string(msh2))
 	}
 	sorted := append(sortByDirection(pos, above, obstacle), sortByDirection(pos, nb, obstacle)...)
-	if *debug || pos.x == debugX || pos.y == debugY || depth > depthDebug {
+	if *debug && (pos.x == debugX || pos.y == debugY || depth > depthDebug) {
 		msh, _ := json.Marshal(sorted)
 		println(depth, pos.x, pos.y, "SORTED: ", string(msh))
+	}
+
+	if len(sorted) == 0 {
+		return nil, fmt.Errorf("dead way at %d, %d", pos.x, pos.y)
+	}
+
+	if isWrongWay(pos, sorted[0], obstacle) {
+		return nil, fmt.Errorf("wrong way from %d,%d going %d", pos.x, pos.y, sorted[0])
+	}
+
+	if depth > 0 && atEdge(pos) {
+		return nil, fmt.Errorf("wrong way: at edge: %d,%d", pos.x, pos.y)
 	}
 
 	// TODO: do better
 	fewestSteps := 1000000000
 	oneDirection := 0
 	var bestHike []point
-	for i, v := range sorted {
+	//	for i, v := range sorted {
+	// not using range, because we might want to skip over one of them
+	for i := 0; i < len(sorted); i++ {
+		v := sorted[i]
 		posTried, ok := nb[v]
 		if !ok {
 			posTried, ok = above[v]
@@ -174,46 +218,53 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 		cps := copySeen(seen)
 		hike, err := visit(posTried, cps, depth+1)
 		if err != nil {
-			if *debug {
+			if *debug || *verbose {
 				_ = i
 				println(fmt.Sprintf("route %d, starting from %d, %d, direction %d: %v", i, pos.x, pos.y, v, err))
 			}
 			continue
 		}
 
-		if len(hike) == 0 || len(hike) >= fewestSteps {
-			// TODO: really?
-			continue
+		if len(hike) > 0 && len(hike) < fewestSteps {
+			// if len(hike) > 0 && len(hike) <= fewestSteps {
+			// note as best hike so far
+			oneDirection = v
+			fewestSteps = len(hike)
+			bestHike = hike
 		}
 
-		// note as best hike so far
-		oneDirection = v
-		fewestSteps = len(hike)
-		bestHike = hike
-
-		// should we still attempt other routes?
+		// still haven't found a route
+		if oneDirection == 0 {
+			continue
+		}
 
 		if i == len(sorted)-1 {
 			break
 		}
 
+		// should we still attempt other routes?
+
 		if len(sorted) == 3 {
-			break
-			// TODO: do better
 			dir2, _ := nb[sorted[i+1]]
-			println(fmt.Sprintf("%d IS BRANCHING3 FOR %d,%d and %d,%d", depth, posTried.x, posTried.y, dir2.x, dir2.y))
+			if *debug {
+				// println(fmt.Sprintf("%d IS BRANCHING3 FOR %d,%d and %d,%d", depth, posTried.x, posTried.y, dir2.x, dir2.y))
+			}
 			if isBranch(posTried, dir2) {
 				continue
 			}
 			if i > 0 {
 				break
 			}
+
 			dir3, _ := nb[sorted[i+2]]
-			println(fmt.Sprintf("%d IS BRANCHING3 FOR %d,%d and %d,%d", depth, posTried.x, posTried.y, dir3.x, dir3.y))
+			if *debug {
+				// println(fmt.Sprintf("%d IS BRANCHING3 BIS FOR %d,%d and %d,%d", depth, posTried.x, posTried.y, dir3.x, dir3.y))
+			}
 			if isBranch(posTried, dir3) {
+				i++
 				continue
 			}
-
+			break
 		}
 
 		if len(sorted) == 2 {
@@ -222,13 +273,16 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 			if dir1.x == dir2.x || dir1.y == dir2.y {
 				continue
 			}
-			println(fmt.Sprintf("%d IS BRANCHING2 FOR %d,%d and %d,%d", depth, dir1.x, dir1.y, dir2.x, dir2.y))
+			if *debug {
+				// println(fmt.Sprintf("%d IS BRANCHING2 FOR %d,%d and %d,%d", depth, dir1.x, dir1.y, dir2.x, dir2.y))
+			}
 			if isBranch(dir1, dir2) {
 				continue
 			}
-			// TODO: that's too strict, but maybe it will work for this specific input
 			break
 		}
+
+		break
 
 	}
 
@@ -236,15 +290,48 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 		return nil, fmt.Errorf("dead end 2 at %d, %d", pos.x, pos.y)
 	}
 
-	if *debug || pos.x == debugX || pos.y == debugY || depth > depthDebug {
-		println(fmt.Sprintf("best route segment from %d, %d: %d, in %d steps", pos.x, pos.y, oneDirection, fewestSteps))
+	if *debug && (pos.x == debugX || pos.y == debugY || depth > depthDebug) {
+		// println(fmt.Sprintf("best route segment from %d, %d: %d, in %d steps", pos.x, pos.y, oneDirection, fewestSteps))
 	}
 
 	pos.next = oneDirection
 	return append([]point{pos}, bestHike...), nil
 }
 
+func isWrongWay(pos point, dir int, obstacle []int) bool {
+	if len(obstacle) > 0 {
+		return false
+	}
+	diffX := dest.x - pos.x
+	diffY := dest.y - pos.y
+	currentDist := diffX*diffX + diffY*diffY
+	switch dir {
+	case UP:
+		pos.y--
+	case DOWN:
+		pos.y++
+	case LEFT:
+		pos.x--
+	case RIGHT:
+		pos.x++
+	}
+	diffX = dest.x - pos.x
+	diffY = dest.y - pos.y
+	newDist := diffX*diffX + diffY*diffY
+	return newDist > currentDist
+}
+
+func atEdge(pos point) bool {
+	if pos.x == 0 || pos.x == width-1 {
+		return true
+	}
+	return pos.y == 0 || pos.y == height-1
+}
+
 func isBranch(dir1, dir2 point) bool {
+	if dir1.x == dir2.x || dir1.y == dir2.y {
+		return false
+	}
 	// we assume dir1 and dir2 are perpendicular
 	dir1X := math.Abs(float64(dir1.x))
 	dir1Y := math.Abs(float64(dir1.y))
@@ -287,7 +374,19 @@ func printPoints(p map[int]point) {
 	}
 }
 
-func printMap(center point) {
+func printMap(center point, outFile string) {
+	var out io.Writer
+	if outFile == "" {
+		out = os.Stdout
+	} else {
+		var err error
+		filename := outFile
+		out, err = os.Create(filename)
+		if err != nil {
+			panic(err)
+		}
+		defer out.(*os.File).Close()
+	}
 	startx, starty := 0, 0
 	endx, endy := width, height
 	if center.x != 0 && center.y != 0 {
@@ -306,9 +405,41 @@ func printMap(center point) {
 		var line []byte
 		for x := startx; x < endx; x++ {
 			elevation, _ := topomap[position{x: x, y: y}]
+			if x == center.x && y == center.y {
+				elevation = 'X'
+			}
 			line = append(line, byte(elevation))
 		}
-		println(string(line))
+		fmt.Fprintln(out, string(line))
+	}
+}
+
+func printSeen(outFile string) {
+	var out io.Writer
+	if outFile == "" {
+		out = os.Stdout
+	} else {
+		var err error
+		filename := outFile
+		out, err = os.Create(filename)
+		if err != nil {
+			panic(err)
+		}
+		defer out.(*os.File).Close()
+	}
+	startx, starty := 0, 0
+	endx, endy := width, height
+
+	for y := starty; y < endy; y++ {
+		var line []byte
+		for x := startx; x < endx; x++ {
+			if _, ok := globalSeen[position{x: x, y: y}]; ok {
+				line = append(line, byte('X'))
+				continue
+			}
+			line = append(line, byte('O'))
+		}
+		fmt.Fprintln(out, string(line))
 	}
 }
 
@@ -430,18 +561,6 @@ func noFalling(currentZ int, neighbours map[int]point) []int {
 	return obstacle
 }
 
-// TODO: do not copy
-func noBackTracking(previous point, neighbours map[int]point) map[int]point {
-	withoutBackTracking := make(map[int]point)
-	for k, v := range neighbours {
-		if v.x == previous.x && v.y == previous.y {
-			continue
-		}
-		withoutBackTracking[k] = v
-	}
-	return withoutBackTracking
-}
-
 func higher(currentZ int, neighbours map[int]point) map[int]point {
 	above := make(map[int]point)
 	for k, v := range neighbours {
@@ -451,44 +570,6 @@ func higher(currentZ int, neighbours map[int]point) map[int]point {
 		}
 	}
 	return above
-}
-
-func noWrongVerticalWay(direction position, neighbours map[int]point) map[int]point {
-	without := make(map[int]point)
-	_, okUP := neighbours[UP]
-	_, okDOWN := neighbours[DOWN]
-	if !okUP || !okDOWN {
-		return neighbours
-	}
-	for k, v := range neighbours {
-		without[k] = v
-	}
-
-	if direction.y > 0 {
-		delete(without, UP)
-		return without
-	}
-	delete(without, DOWN)
-	return without
-}
-
-func noWrongHorizontalWay(direction position, neighbours map[int]point) map[int]point {
-	without := make(map[int]point)
-	_, okLEFT := neighbours[LEFT]
-	_, okRIGHT := neighbours[RIGHT]
-	if !okLEFT || !okRIGHT {
-		return neighbours
-	}
-	for k, v := range neighbours {
-		without[k] = v
-	}
-
-	if direction.x > 0 {
-		delete(without, LEFT)
-		return without
-	}
-	delete(without, RIGHT)
-	return without
 }
 
 func appendIfExists(neighbours map[int]point, direction ...int) []int {
@@ -532,7 +613,8 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 
 	if direction.x >= 0 && !okRIGHT && direction.y >= 0 && !okDOWN {
 		// in practice there's maximum one obstacle at this point
-		if len(obstacle) > 0 && obstacle[0] == DOWN || X < Y {
+		//		if len(obstacle) > 0 && obstacle[0] == DOWN || X < Y {
+		if len(obstacle) > 0 && obstacle[0] == DOWN {
 			return appendIfExists(nb, LEFT, UP)
 		}
 		return appendIfExists(nb, UP, LEFT)
@@ -540,7 +622,8 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 	}
 
 	if direction.x >= 0 && !okRIGHT && direction.y <= 0 && !okUP {
-		if len(obstacle) > 0 && obstacle[0] == UP || X < Y {
+		//		if len(obstacle) > 0 && obstacle[0] == UP || X < Y {
+		if len(obstacle) > 0 && obstacle[0] == UP {
 			return appendIfExists(nb, LEFT, DOWN)
 		}
 		return appendIfExists(nb, DOWN, LEFT)
@@ -548,7 +631,8 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 	}
 
 	if direction.x <= 0 && !okLEFT && direction.y <= 0 && !okUP {
-		if len(obstacle) > 0 && obstacle[0] == UP || X < Y {
+		//		if len(obstacle) > 0 && obstacle[0] == UP || X < Y {
+		if len(obstacle) > 0 && obstacle[0] == UP {
 			return appendIfExists(nb, RIGHT, DOWN)
 		}
 		return appendIfExists(nb, DOWN, RIGHT)
@@ -556,7 +640,8 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 	}
 
 	if direction.x <= 0 && !okLEFT && direction.y >= 0 && !okDOWN {
-		if len(obstacle) > 0 && obstacle[0] == DOWN || X < Y {
+		//		if len(obstacle) > 0 && obstacle[0] == DOWN || X < Y {
+		if len(obstacle) > 0 && obstacle[0] == DOWN {
 			return appendIfExists(nb, RIGHT, UP)
 		}
 		return appendIfExists(nb, UP, RIGHT)
