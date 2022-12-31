@@ -48,7 +48,7 @@ var (
 	height                = 0
 	hike                  []point
 	debugX, debugY        = 41, 15
-	depthDebug            = 10000
+	depthDebug            = 30
 
 	seenMu     sync.Mutex
 	globalSeen = make(map[position]bool)
@@ -98,7 +98,7 @@ func main() {
 
 	if *gseen {
 		go func() {
-			time.Sleep(5 * time.Second)
+			time.Sleep(35 * time.Second)
 			seenMu.Lock()
 			printSeen("./seen.txt")
 			seenMu.Unlock()
@@ -140,7 +140,7 @@ func copySeen(seen map[point]bool) map[point]bool {
 
 // TODO: optimizations to fail faster
 func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) {
-	println("VISITING ", pos.x, pos.y)
+	// println("VISITING ", pos.x, pos.y)
 	if depth == 10000 {
 		// TODO: is this makeing us loop forever??
 		// yep, ffs.
@@ -216,7 +216,7 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 			println("SORTEDeuoueDDDD: ", len(sorted))
 		}
 
-		return nil, fmt.Errorf("wrong way from %d,%d going %d", pos.x, pos.y, sorted[0])
+		// return nil, fmt.Errorf("wrong way from %d,%d going %d", pos.x, pos.y, sorted[0])
 	}
 
 	if depth > 0 && atEdge(pos) {
@@ -269,11 +269,15 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 			break
 		}
 
+		if len(hike) == 1 {
+			// we were the last stop, it would be stupid to try other routes
+			// break
+		}
+
 		// should we still attempt other routes?
 
-		break
 		if len(sorted) == 2 {
-			break
+			continue
 			dir2, _ := nb[sorted[1]]
 			// println("FROM", pos.x, pos.y, "WE WOULD TRY", sorted[1], dir2.x, dir2.y)
 			// break
@@ -840,35 +844,48 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 			if pos.x == 41 && pos.y == 15 {
 				println("INDEED LD")
 			}
-			// TODO: unwrap the other ones?
-			if direction.x >= 0 {
-				if direction.y == 0 {
-					if pos.x == 41 && pos.y == 15 {
-						println("INDEED EXPLORE RIGHT")
-					}
+			if direction.x > 0 && direction.y < 0 {
+				// TODO: compare X and Y?
+				return appendIfExists(nb, RIGHT, UP)
+			}
+			if direction.x == 0 {
+				if direction.y > 0 {
+					return appendIfExists(nb, DOWN, LEFT)
+				}
+				return appendIfExists(nb, UP)
+			}
+			if direction.y == 0 {
+				if direction.x > 0 {
+					// TODO: would it be wrong to say we only allow to go RIGHT?
+					// return appendIfExists(nb, RIGHT, DOWN)
 					return appendIfExists(nb, RIGHT)
 				}
-				if direction.y < 0 {
-					return appendIfExists(nb, RIGHT, UP)
-				}
-				return appendIfExists(nb, RIGHT, DOWN)
+				return appendIfExists(nb, LEFT)
 			}
+
+			// TODO: compare X and Y ?
 			return appendIfExists(nb, LEFT, DOWN)
 		case DR:
 			if direction.x < 0 && direction.y < 0 {
 				return appendIfExists(nb, UP, LEFT)
 			}
 			if direction.x == 0 {
-				return appendIfExists(nb, DOWN)
+				if direction.y > 0 {
+					return appendIfExists(nb, DOWN, RIGHT)
+				}
+				return appendIfExists(nb, UP)
 			}
 			if direction.y == 0 {
-				return appendIfExists(nb, RIGHT)
+				if direction.x > 0 {
+					return appendIfExists(nb, RIGHT)
+				}
+				return appendIfExists(nb, LEFT, DOWN)
 			}
 			if pos.x == 47 && pos.y == 15 {
 				println("I CHOOSE YOU")
 			}
 			// TODO: compare X and Y ?
-			return appendIfExists(nb, DOWN, RIGHT)
+			return appendIfExists(nb, RIGHT, DOWN)
 		}
 	}
 
