@@ -49,7 +49,7 @@ var (
 	hike                  []point
 	debugX, debugY        = 41, 15
 	depthDebug            = 30
-	pause                 = 200 * time.Millisecond
+	pause                 = 10 * time.Millisecond
 
 	seenMu     sync.Mutex
 	globalSeen = make(map[position]bool)
@@ -99,7 +99,7 @@ func main() {
 
 	if *gseen {
 		go func() {
-			time.Sleep(60 * time.Second)
+			time.Sleep(30 * time.Second)
 			seenMu.Lock()
 			printSeen("./seen.txt")
 			seenMu.Unlock()
@@ -149,9 +149,9 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 	}
 
 	if *debug && depth > depthDebug {
-		time.Sleep(pause)
+		// time.Sleep(pause)
 		// printMap(pos, "map.txt")
-		printMap(pos, "")
+		// printMap(pos, "")
 	}
 
 	seenMu.Lock()
@@ -198,7 +198,7 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 	}
 
 	if pos.x == 47 && pos.y == 15 {
-		println("SORTEDDDDD: ", len(sorted))
+		// println("SORTEDDDDD: ", len(sorted))
 	}
 
 	// merge them again
@@ -214,7 +214,7 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 	if isWrongWay(pos, sorted[0], obstacle) {
 
 		if pos.x == 47 && pos.y == 15 {
-			println("SORTEDeuoueDDDD: ", len(sorted))
+			// println("SORTEDeuoueDDDD: ", len(sorted))
 		}
 
 		// return nil, fmt.Errorf("wrong way from %d,%d going %d", pos.x, pos.y, sorted[0])
@@ -510,7 +510,8 @@ func printSeen(outFile string) {
 				line = append(line, byte('X'))
 				continue
 			}
-			line = append(line, byte('O'))
+			elevation, _ := topomap[position{x: x, y: y}]
+			line = append(line, byte(elevation))
 		}
 		fmt.Fprintln(out, string(line))
 	}
