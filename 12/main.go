@@ -47,8 +47,8 @@ var (
 	width                 = 0
 	height                = 0
 	hike                  []point
-	debugX, debugY        = 0, 0
-	depthDebug            = 54
+	debugX, debugY        = 41, 15
+	depthDebug            = 10000
 
 	seenMu     sync.Mutex
 	globalSeen = make(map[position]bool)
@@ -98,7 +98,7 @@ func main() {
 
 	if *gseen {
 		go func() {
-			time.Sleep(30 * time.Second)
+			time.Sleep(5 * time.Second)
 			seenMu.Lock()
 			printSeen("./seen.txt")
 			seenMu.Unlock()
@@ -170,8 +170,8 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 	obstacle = append(obstacle, noFalling(pos.z, nb)...)
 	notTwice(nb, seen)
 
-	if *debug && (pos.x == debugX || pos.y == debugY || depth > depthDebug) {
-		// println(depth, pos.x, pos.y, "NEIGHBOURS: ", len(nb))
+	if *debug && (pos.x == debugX && pos.y == debugY || depth > depthDebug) {
+		println(depth, pos.x, pos.y, "NEIGHBOURS: ", len(nb))
 	}
 
 	if len(nb) == 0 {
@@ -179,23 +179,31 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 	}
 
 	above := higher(pos.z, nb)
-	if *debug && (pos.x == debugX || pos.y == debugY || depth > depthDebug) {
+	if *debug && (pos.x == debugX && pos.y == debugY || depth > depthDebug) {
 		msh, _ := json.Marshal(above)
 		msh2, _ := json.Marshal(nb)
 		_ = msh
 		_ = msh2
-		// println(depth, pos.x, pos.y, "ABOVE: ", string(msh), "BELOW: ", string(msh2))
+		println(depth, pos.x, pos.y, "ABOVE: ", string(msh), "BELOW: ", string(msh2))
 	}
+
+	// TODO: do we really always want to give priority to above first?
 	sorted := append(sortByDirection(pos, above, obstacle), sortByDirection(pos, nb, obstacle)...)
-	if *debug && (pos.x == debugX || pos.y == debugY || depth > depthDebug) {
+	if *debug && (pos.x == debugX && pos.y == debugY || depth > depthDebug) {
 		msh, _ := json.Marshal(sorted)
 		println(depth, pos.x, pos.y, "SORTED: ", string(msh))
+	}
+
+	// merge them again
+	for k, v := range above {
+		nb[k] = v
 	}
 
 	if len(sorted) == 0 {
 		return nil, fmt.Errorf("dead way at %d, %d", pos.x, pos.y)
 	}
 
+	// TODO: remove?
 	if isWrongWay(pos, sorted[0], obstacle) {
 		return nil, fmt.Errorf("wrong way from %d,%d going %d", pos.x, pos.y, sorted[0])
 	}
@@ -222,15 +230,14 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 		cps := copySeen(seen)
 		hike, err := visit(posTried, cps, depth+1)
 		if err != nil {
-			if *debug || *verbose {
+			if *debug {
 				_ = i
 				// println(fmt.Sprintf("route %d, starting from %d, %d, direction %d: %v", i, pos.x, pos.y, v, err))
 			}
 			continue
 		}
 
-		if len(hike) > 0 && len(hike) < fewestSteps {
-			// if len(hike) > 0 && len(hike) <= fewestSteps {
+		if len(hike) > 0 && len(hike) <= fewestSteps {
 			// note as best hike so far
 			oneDirection = v
 			fewestSteps = len(hike)
@@ -248,7 +255,44 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 
 		// should we still attempt other routes?
 
+		if len(sorted) == 2 {
+			continue
+
+			// we're touching an obstacle
+			if len(obstacle) == 1 {
+				continue
+			}
+
+			if _, ok := isRubbing(pos, nb); ok {
+				// continue
+			}
+
+			break
+
+			dir1, _ := nb[sorted[0]]
+			dir2, _ := nb[sorted[1]]
+			if dir1.x == dir2.x || dir1.y == dir2.y {
+				continue
+			}
+			if *debug {
+				// println(fmt.Sprintf("%d IS BRANCHING2 FOR %d,%d and %d,%d", depth, dir1.x, dir1.y, dir2.x, dir2.y))
+			}
+
+			if isBranch(dir1, dir2) {
+				continue
+			}
+
+			break
+
+			// TODO: remove all below?
+
+			break
+		}
+
+		break
+
 		if len(sorted) == 3 {
+			log.Fatal("CAN IT HAPPEN?")
 			dir2, _ := nb[sorted[i+1]]
 			if *debug {
 				// println(fmt.Sprintf("%d IS BRANCHING3 FOR %d,%d and %d,%d", depth, posTried.x, posTried.y, dir2.x, dir2.y))
@@ -294,8 +338,8 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 		return nil, fmt.Errorf("dead end 2 at %d, %d", pos.x, pos.y)
 	}
 
-	if *debug && (pos.x == debugX || pos.y == debugY || depth > depthDebug) {
-		// println(fmt.Sprintf("best route segment from %d, %d: %d, in %d steps", pos.x, pos.y, oneDirection, fewestSteps))
+	if *debug && (pos.x == debugX && pos.y == debugY || depth > depthDebug) {
+		println(fmt.Sprintf("best route segment from %d, %d: %d, in %d steps", pos.x, pos.y, oneDirection, fewestSteps))
 	}
 
 	pos.next = oneDirection
@@ -651,9 +695,10 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 	Y := math.Abs(float64(direction.y))
 
 	// we're touching 2 obstacles, only one direction we can go
+	// TODO: fuck, no, we could be coming from the hole. so 2 obstacles, and still possible 2 directions then.
 	if len(obstacle) >= 2 {
 		if len(nb) > 1 {
-			panic("SHOULD NOT HAPPEN")
+			// log.Fatalf("IMPOSSIBLE: at %d,%d: %d obstacles, and %d neighbours", pos.x, pos.y, len(obstacle), len(nb))
 		}
 	}
 
@@ -736,6 +781,9 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 	// TODO: what if we rub two different obstacles?
 	diag, ok := isRubbing(pos, nb)
 	if ok {
+		if pos.x == 41 && pos.y == 15 {
+			println("INDEED RUBBING")
+		}
 		// not allowed to detach from the obstacle,
 		// unless if it's to go in the right direction
 		switch diag {
@@ -750,8 +798,15 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 			}
 			return appendIfExists(nb, UP, LEFT)
 		case LD:
-			if direction.x >= 0 && direction.y <= 0 {
-				return appendIfExists(nb, RIGHT, UP)
+			// TODO: unwrap the other ones?
+			if direction.x >= 0 {
+				if direction.y <= 0 {
+					return appendIfExists(nb, RIGHT, UP)
+				}
+				if pos.x == 41 && pos.y == 15 {
+					println("INDEED EXPLORE RIGHT DOWN")
+				}
+				return appendIfExists(nb, RIGHT, DOWN)
 			}
 			return appendIfExists(nb, LEFT, DOWN)
 		case DR:
@@ -761,6 +816,43 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 			return appendIfExists(nb, DOWN, RIGHT)
 		}
 	}
+
+	// no obstacle.
+	// two good directions available. Prioritize the one that gets us the closest.
+
+	if len(obstacle) == 0 {
+		if X >= Y {
+			if direction.x >= 0 && okRIGHT {
+				if direction.y >= 0 && okDOWN {
+					return appendIfExists(nb, RIGHT, DOWN)
+				}
+				return appendIfExists(nb, RIGHT, UP)
+			}
+			if direction.x <= 0 && okLEFT {
+				if direction.y >= 0 && okDOWN {
+					return appendIfExists(nb, LEFT, DOWN)
+				}
+				return appendIfExists(nb, LEFT, UP)
+			}
+		}
+
+		if direction.y >= 0 && okDOWN {
+			if direction.x >= 0 && okRIGHT {
+				return appendIfExists(nb, DOWN, RIGHT)
+			}
+			return appendIfExists(nb, DOWN, LEFT)
+		}
+		if direction.y <= 0 && okUP {
+			if direction.x >= 0 && okRIGHT {
+				return appendIfExists(nb, UP, RIGHT)
+			}
+			return appendIfExists(nb, UP, LEFT)
+		}
+	}
+
+	// TODO: 2 obstacles
+
+	return nil
 
 	// TODO: clean up below
 
