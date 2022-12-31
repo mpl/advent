@@ -140,6 +140,7 @@ func copySeen(seen map[point]bool) map[point]bool {
 
 // TODO: optimizations to fail faster
 func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) {
+	println("VISITING ", pos.x, pos.y)
 	if depth == 10000 {
 		// TODO: is this makeing us loop forever??
 		// yep, ffs.
@@ -149,6 +150,7 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 	if *debug && depth > depthDebug {
 		time.Sleep(time.Second)
 		// printMap(pos, "map.txt")
+		printMap(pos, "")
 	}
 
 	seenMu.Lock()
@@ -194,6 +196,10 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 		println(depth, pos.x, pos.y, "SORTED: ", string(msh))
 	}
 
+	if pos.x == 47 && pos.y == 15 {
+		println("SORTEDDDDD: ", len(sorted))
+	}
+
 	// merge them again
 	for k, v := range above {
 		nb[k] = v
@@ -205,10 +211,20 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 
 	// TODO: remove?
 	if isWrongWay(pos, sorted[0], obstacle) {
+
+		if pos.x == 47 && pos.y == 15 {
+			println("SORTEDeuoueDDDD: ", len(sorted))
+		}
+
 		return nil, fmt.Errorf("wrong way from %d,%d going %d", pos.x, pos.y, sorted[0])
 	}
 
 	if depth > 0 && atEdge(pos) {
+
+		if pos.x == 47 && pos.y == 15 {
+			println("AYOOOOO: ", len(sorted))
+		}
+
 		return nil, fmt.Errorf("wrong way: at edge: %d,%d", pos.x, pos.y)
 	}
 
@@ -255,8 +271,12 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 
 		// should we still attempt other routes?
 
+		break
 		if len(sorted) == 2 {
-			continue
+			break
+			dir2, _ := nb[sorted[1]]
+			// println("FROM", pos.x, pos.y, "WE WOULD TRY", sorted[1], dir2.x, dir2.y)
+			// break
 
 			// we're touching an obstacle
 			if len(obstacle) == 1 {
@@ -270,7 +290,7 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 			break
 
 			dir1, _ := nb[sorted[0]]
-			dir2, _ := nb[sorted[1]]
+			//			dir2, _ := nb[sorted[1]]
 			if dir1.x == dir2.x || dir1.y == dir2.y {
 				continue
 			}
@@ -339,7 +359,7 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 	}
 
 	if *debug && (pos.x == debugX && pos.y == debugY || depth > depthDebug) {
-		println(fmt.Sprintf("best route segment from %d, %d: %d, in %d steps", pos.x, pos.y, oneDirection, fewestSteps))
+		// println(fmt.Sprintf("best route segment from %d, %d: %d, in %d steps", pos.x, pos.y, oneDirection, fewestSteps))
 	}
 
 	pos.next = oneDirection
@@ -703,17 +723,23 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 	}
 
 	if len(obstacle) == 1 {
+		if pos.x == 40 && pos.y == 15 {
+			println("INDEED TOUCHING: ")
+		}
 		// not allowed to detach from obstacle if target is on the other side of obstacle
 		switch obstacle[0] {
 		case RIGHT:
 			// target is on the other side obstacle, go along the obstacle in both directions
-			if direction.x > 0 {
+			if direction.x >= 0 {
 				if direction.y > 0 {
 					return appendIfExists(nb, DOWN, UP)
 				}
 				return appendIfExists(nb, UP, DOWN)
 			}
 			// target is on our side of the obstacle, we are allowed to detach
+			if direction.y == 0 {
+				return appendIfExists(nb, LEFT)
+			}
 			if direction.y > 0 {
 				if X > Y {
 					return appendIfExists(nb, LEFT, DOWN)
@@ -725,11 +751,14 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 			}
 			return appendIfExists(nb, UP, LEFT)
 		case LEFT:
-			if direction.x < 0 {
+			if direction.x <= 0 {
 				if direction.y > 0 {
 					return appendIfExists(nb, DOWN, UP)
 				}
 				return appendIfExists(nb, UP, DOWN)
+			}
+			if direction.y == 0 {
+				return appendIfExists(nb, RIGHT)
 			}
 			if direction.y > 0 {
 				if X > Y {
@@ -742,11 +771,14 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 			}
 			return appendIfExists(nb, UP, RIGHT)
 		case UP:
-			if direction.y < 0 {
+			if direction.y <= 0 {
 				if direction.x > 0 {
 					return appendIfExists(nb, RIGHT, LEFT)
 				}
 				return appendIfExists(nb, LEFT, RIGHT)
+			}
+			if direction.x == 0 {
+				return appendIfExists(nb, DOWN)
 			}
 			if direction.x > 0 {
 				if X > Y {
@@ -759,11 +791,14 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 			}
 			return appendIfExists(nb, DOWN, LEFT)
 		case DOWN:
-			if direction.y > 0 {
+			if direction.y >= 0 {
 				if direction.x > 0 {
 					return appendIfExists(nb, RIGHT, LEFT)
 				}
 				return appendIfExists(nb, LEFT, RIGHT)
+			}
+			if direction.x == 0 {
+				return appendIfExists(nb, UP)
 			}
 			if direction.x > 0 {
 				if X > Y {
@@ -776,13 +811,17 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 			}
 			return appendIfExists(nb, UP, LEFT)
 		}
+		panic("WTF")
 	}
 
 	// TODO: what if we rub two different obstacles?
 	diag, ok := isRubbing(pos, nb)
 	if ok {
 		if pos.x == 41 && pos.y == 15 {
-			println("INDEED RUBBING")
+			println("INDEED RUBBING: ", diag)
+		}
+		if pos.x == 47 && pos.y == 15 {
+			println("INDEED WE RUBBING: ", diag)
 		}
 		// not allowed to detach from the obstacle,
 		// unless if it's to go in the right direction
@@ -798,21 +837,37 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 			}
 			return appendIfExists(nb, UP, LEFT)
 		case LD:
+			if pos.x == 41 && pos.y == 15 {
+				println("INDEED LD")
+			}
 			// TODO: unwrap the other ones?
 			if direction.x >= 0 {
-				if direction.y <= 0 {
-					return appendIfExists(nb, RIGHT, UP)
+				if direction.y == 0 {
+					if pos.x == 41 && pos.y == 15 {
+						println("INDEED EXPLORE RIGHT")
+					}
+					return appendIfExists(nb, RIGHT)
 				}
-				if pos.x == 41 && pos.y == 15 {
-					println("INDEED EXPLORE RIGHT DOWN")
+				if direction.y < 0 {
+					return appendIfExists(nb, RIGHT, UP)
 				}
 				return appendIfExists(nb, RIGHT, DOWN)
 			}
 			return appendIfExists(nb, LEFT, DOWN)
 		case DR:
-			if direction.x <= 0 && direction.y <= 0 {
+			if direction.x < 0 && direction.y < 0 {
 				return appendIfExists(nb, UP, LEFT)
 			}
+			if direction.x == 0 {
+				return appendIfExists(nb, DOWN)
+			}
+			if direction.y == 0 {
+				return appendIfExists(nb, RIGHT)
+			}
+			if pos.x == 47 && pos.y == 15 {
+				println("I CHOOSE YOU")
+			}
+			// TODO: compare X and Y ?
 			return appendIfExists(nb, DOWN, RIGHT)
 		}
 	}
@@ -822,13 +877,19 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 
 	if len(obstacle) == 0 {
 		if X >= Y {
-			if direction.x >= 0 && okRIGHT {
-				if direction.y >= 0 && okDOWN {
+			if direction.x > 0 && okRIGHT {
+				if direction.y == 0 {
+					return appendIfExists(nb, RIGHT)
+				}
+				if direction.y > 0 && okDOWN {
 					return appendIfExists(nb, RIGHT, DOWN)
 				}
 				return appendIfExists(nb, RIGHT, UP)
 			}
-			if direction.x <= 0 && okLEFT {
+			if direction.x < 0 && okLEFT {
+				if direction.y == 0 {
+					return appendIfExists(nb, LEFT)
+				}
 				if direction.y >= 0 && okDOWN {
 					return appendIfExists(nb, LEFT, DOWN)
 				}
@@ -836,13 +897,19 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 			}
 		}
 
-		if direction.y >= 0 && okDOWN {
-			if direction.x >= 0 && okRIGHT {
+		if direction.y > 0 && okDOWN {
+			if direction.x == 0 {
+				return appendIfExists(nb, DOWN)
+			}
+			if direction.x > 0 && okRIGHT {
 				return appendIfExists(nb, DOWN, RIGHT)
 			}
 			return appendIfExists(nb, DOWN, LEFT)
 		}
-		if direction.y <= 0 && okUP {
+		if direction.y < 0 && okUP {
+			if direction.x == 0 {
+				return appendIfExists(nb, UP)
+			}
 			if direction.x >= 0 && okRIGHT {
 				return appendIfExists(nb, UP, RIGHT)
 			}
