@@ -49,6 +49,7 @@ var (
 	hike                  []point
 	debugX, debugY        = 41, 15
 	depthDebug            = 30
+	pause                 = 200 * time.Millisecond
 
 	seenMu     sync.Mutex
 	globalSeen = make(map[position]bool)
@@ -98,7 +99,7 @@ func main() {
 
 	if *gseen {
 		go func() {
-			time.Sleep(35 * time.Second)
+			time.Sleep(60 * time.Second)
 			seenMu.Lock()
 			printSeen("./seen.txt")
 			seenMu.Unlock()
@@ -148,7 +149,7 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 	}
 
 	if *debug && depth > depthDebug {
-		time.Sleep(time.Second)
+		time.Sleep(pause)
 		// printMap(pos, "map.txt")
 		printMap(pos, "")
 	}
@@ -728,7 +729,7 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 
 	if len(obstacle) == 1 {
 		if pos.x == 40 && pos.y == 15 {
-			println("INDEED TOUCHING: ")
+			// println("INDEED TOUCHING: ")
 		}
 		// not allowed to detach from obstacle if target is on the other side of obstacle
 		switch obstacle[0] {
@@ -822,31 +823,45 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 	diag, ok := isRubbing(pos, nb)
 	if ok {
 		if pos.x == 41 && pos.y == 15 {
-			println("INDEED RUBBING: ", diag)
+			// println("INDEED RUBBING: ", diag)
 		}
 		if pos.x == 47 && pos.y == 15 {
-			println("INDEED WE RUBBING: ", diag)
+			// println("INDEED WE RUBBING: ", diag)
 		}
 		// not allowed to detach from the obstacle,
 		// unless if it's to go in the right direction
 		switch diag {
 		case RU:
-			if direction.x <= 0 && direction.y >= 0 {
-				return appendIfExists(nb, LEFT, DOWN)
+			if direction.x == 0 {
+				if direction.y < 0 {
+					return appendIfExists(nb, UP, RIGHT)
+				}
+				return appendIfExists(nb, DOWN)
+			}
+			if direction.y == 0 {
+				if direction.x > 0 {
+					return appendIfExists(nb, RIGHT)
+				}
+				return appendIfExists(nb, LEFT)
 			}
 			return appendIfExists(nb, RIGHT, UP)
 		case UL:
-			if direction.x >= 0 && direction.y >= 0 {
-				return appendIfExists(nb, DOWN, RIGHT)
+			if direction.x == 0 {
+				if direction.y < 0 {
+					return appendIfExists(nb, UP, LEFT)
+				}
+				return appendIfExists(nb, DOWN)
+			}
+			if direction.y == 0 {
+				if direction.x > 0 {
+					return appendIfExists(nb, RIGHT)
+				}
+				return appendIfExists(nb, LEFT)
 			}
 			return appendIfExists(nb, UP, LEFT)
 		case LD:
 			if pos.x == 41 && pos.y == 15 {
-				println("INDEED LD")
-			}
-			if direction.x > 0 && direction.y < 0 {
-				// TODO: compare X and Y?
-				return appendIfExists(nb, RIGHT, UP)
+				// println("INDEED LD")
 			}
 			if direction.x == 0 {
 				if direction.y > 0 {
@@ -856,18 +871,17 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 			}
 			if direction.y == 0 {
 				if direction.x > 0 {
-					// TODO: maybe that's too strict?
+					// TODO: too strict?
 					return appendIfExists(nb, RIGHT)
 					// return appendIfExists(nb, RIGHT, DOWN)
 				}
 				return appendIfExists(nb, LEFT)
 			}
-
 			// TODO: compare X and Y ?
 			return appendIfExists(nb, LEFT, DOWN)
 		case DR:
-			if direction.x < 0 && direction.y < 0 {
-				return appendIfExists(nb, UP, LEFT)
+			if pos.x == 47 && pos.y == 15 {
+				// println("I CHOOSE YOU")
 			}
 			if direction.x == 0 {
 				if direction.y > 0 {
@@ -879,10 +893,7 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 				if direction.x > 0 {
 					return appendIfExists(nb, RIGHT)
 				}
-				return appendIfExists(nb, LEFT, DOWN)
-			}
-			if pos.x == 47 && pos.y == 15 {
-				println("I CHOOSE YOU")
+				return appendIfExists(nb, LEFT)
 			}
 			// TODO: compare X and Y ?
 			return appendIfExists(nb, RIGHT, DOWN)
