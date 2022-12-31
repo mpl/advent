@@ -731,6 +731,7 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 			println("INDEED TOUCHING: ")
 		}
 		// not allowed to detach from obstacle if target is on the other side of obstacle
+		// AND when ONLY when we are perpendicular to it!!
 		switch obstacle[0] {
 		case RIGHT:
 			// target is on the other side obstacle, go along the obstacle in both directions
@@ -745,15 +746,9 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 				return appendIfExists(nb, LEFT)
 			}
 			if direction.y > 0 {
-				if X > Y {
-					return appendIfExists(nb, LEFT, DOWN)
-				}
-				return appendIfExists(nb, DOWN, LEFT)
+				return appendIfExists(nb, DOWN)
 			}
-			if X > Y {
-				return appendIfExists(nb, LEFT, UP)
-			}
-			return appendIfExists(nb, UP, LEFT)
+			return appendIfExists(nb, UP)
 		case LEFT:
 			if direction.x <= 0 {
 				if direction.y > 0 {
@@ -765,15 +760,9 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 				return appendIfExists(nb, RIGHT)
 			}
 			if direction.y > 0 {
-				if X > Y {
-					return appendIfExists(nb, RIGHT, DOWN)
-				}
-				return appendIfExists(nb, DOWN, RIGHT)
+				return appendIfExists(nb, DOWN)
 			}
-			if X > Y {
-				return appendIfExists(nb, RIGHT, UP)
-			}
-			return appendIfExists(nb, UP, RIGHT)
+			return appendIfExists(nb, UP)
 		case UP:
 			if direction.y <= 0 {
 				if direction.x > 0 {
@@ -785,15 +774,9 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 				return appendIfExists(nb, DOWN)
 			}
 			if direction.x > 0 {
-				if X > Y {
-					return appendIfExists(nb, RIGHT, DOWN)
-				}
-				return appendIfExists(nb, DOWN, RIGHT)
+				return appendIfExists(nb, RIGHT)
 			}
-			if X > Y {
-				return appendIfExists(nb, LEFT, DOWN)
-			}
-			return appendIfExists(nb, DOWN, LEFT)
+			return appendIfExists(nb, LEFT)
 		case DOWN:
 			if direction.y >= 0 {
 				if direction.x > 0 {
@@ -805,15 +788,9 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 				return appendIfExists(nb, UP)
 			}
 			if direction.x > 0 {
-				if X > Y {
-					return appendIfExists(nb, RIGHT, UP)
-				}
-				return appendIfExists(nb, UP, RIGHT)
+				return appendIfExists(nb, RIGHT)
 			}
-			if X > Y {
-				return appendIfExists(nb, LEFT, UP)
-			}
-			return appendIfExists(nb, UP, LEFT)
+			return appendIfExists(nb, LEFT)
 		}
 		panic("WTF")
 	}
@@ -856,9 +833,9 @@ func sortByDirection(pos point, nb map[int]point, obstacle []int) []int {
 			}
 			if direction.y == 0 {
 				if direction.x > 0 {
-					// TODO: would it be wrong to say we only allow to go RIGHT?
-					// return appendIfExists(nb, RIGHT, DOWN)
+					// TODO: maybe that's too strict?
 					return appendIfExists(nb, RIGHT)
+					// return appendIfExists(nb, RIGHT, DOWN)
 				}
 				return appendIfExists(nb, LEFT)
 			}
