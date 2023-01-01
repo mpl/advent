@@ -16,6 +16,8 @@ var (
 	demo    = flag.Bool("demo", false, `use demo input`)
 	destX   = flag.Int("destX", 0, `destx`)
 	destY   = flag.Int("destY", 0, `desty`)
+	startX  = flag.Int("startX", 0, `startx`)
+	startY  = flag.Int("startY", 0, `starty`)
 	gseen   = flag.Bool("seen", false, `seen so far`)
 )
 
@@ -29,6 +31,7 @@ type point struct {
 	y      int
 	z      int
 	weight int
+	next   int
 }
 
 var (
@@ -46,10 +49,9 @@ var (
 	top                   = int('z')
 	width                 = 0
 	height                = 0
-	hike                  []point
 	debugX, debugY        = 41, 15
 	depthDebug            = 30
-	pause                 = 10 * time.Millisecond
+	pause                 = time.Second
 )
 
 func initMap() {
@@ -110,58 +112,125 @@ func main() {
 		dest.y = *destY
 	}
 
-	zstart, _ := topomap[start]
-	pos := point{x: start.x, y: start.y, z: zstart}
+	// zstart, _ := topomap[start]
+	zdest, _ := topomap[dest]
+	pos := point{x: dest.x, y: dest.y, z: zdest, weight: 0}
 
-	visit(pos)
+	discovery = append(discovery, pos)
+	visitAll()
 
 	for _, v := range discovery {
 		weights[position{x: v.x, y: v.y}] = v.weight
 	}
 
-	printSeen("./seen.txt")
-	printWeights("")
+	hike := genHike()
 
-	// printHike(hike, point{})
-	// println("STEPS: ", len(hike))
+	printSeen("./seen.txt")
+	printWeights(dest, "./weights.txt")
+	printHike(hike, point{})
+	println("STEPS: ", len(hike))
+}
+
+func visitAll() {
+	length := 1
+	toVisit := discovery
+	for {
+		for _, v := range toVisit {
+			visit(v)
+		}
+		index := length
+		length = len(discovery)
+		toVisit = discovery[index:]
+		if destinationFucked {
+			return
+		}
+	}
 }
 
 func visit(pos point) {
-	if destinationFucked {
-		return
-	}
-	seen[position{x: pos.x, y: pos.y}] = true
-	// println("VISITING ", pos.x, pos.y)
-
-	if *debug && pos.weight > depthDebug {
-		// time.Sleep(pause)
+	if *debug {
+		time.Sleep(pause)
+		println("VISITING ", pos.x, pos.y)
 		// printMap(pos, "map.txt")
 		// printMap(pos, "")
 	}
 
-	if pos.x == dest.x && pos.y == dest.y {
+	if destinationFucked {
+		return
+	}
+	seen[position{x: pos.x, y: pos.y}] = true
+	if pos.x == start.x && pos.y == start.y {
 		if *verbose || *debug {
-			println("Found dest ", dest.x, dest.y)
+			println("Found start ", start.x, start.y)
 		}
 		destinationFucked = true
 		return
 	}
 
 	nb := neighbours(pos)
-
 	noClimbing(pos.z, nb)
 	noFalling(pos.z, nb)
 	checkSeen(nb)
+	if *debug {
+		println(len(nb), " neighbours from", pos.x, pos.y)
+	}
 
-	newEntriesIndex := len(discovery)
 	for k, _ := range nb {
 		k.weight = pos.weight + 1
 		discovery = append(discovery, k)
 	}
+}
 
-	for _, v := range discovery[newEntriesIndex:] {
-		visit(v)
+func genHike() []point {
+	pos := point{x: start.x, y: start.y, weight: 10000}
+	var hike []point
+	for {
+		if pos.x == dest.x && pos.y == dest.y {
+			hike = append(hike, pos)
+			break
+		}
+		nb := neighbours2(pos)
+		bestDir := 0
+		lowestWeight := pos.weight
+		var bestNext point
+		for k, v := range nb {
+			if v.weight < lowestWeight {
+				lowestWeight = v.weight
+				bestDir = k
+				bestNext = v
+			}
+		}
+		pos.next = bestDir
+		hike = append(hike, pos)
+		pos = bestNext
 	}
+	return hike
+}
+
+func neighbours2(pos point) map[int]point {
+	var points = make(map[int]point)
+	down := position{x: pos.x, y: pos.y + 1}
+	up := position{x: pos.x, y: pos.y - 1}
+	right := position{x: pos.x + 1, y: pos.y}
+	left := position{x: pos.x - 1, y: pos.y}
+	wd, ok := weights[down]
+	if ok {
+		points[DOWN] = point{x: down.x, y: down.y, weight: wd}
+	}
+	wu, ok := weights[up]
+	if ok {
+		points[UP] = point{x: up.x, y: up.y, weight: wu}
+	}
+	wr, ok := weights[right]
+	if ok {
+		points[RIGHT] = point{x: right.x, y: right.y, weight: wr}
+	}
+	wl, ok := weights[left]
+	if ok {
+		points[LEFT] = point{x: left.x, y: left.y, weight: wl}
+	}
+	return points
+
 }
 
 func checkSeen(nb map[point]bool) {
@@ -212,7 +281,7 @@ func printMap(center point, outFile string) {
 	}
 }
 
-func printWeights(outFile string) {
+func printWeights(center position, outFile string) {
 	var out io.Writer
 	if outFile == "" {
 		out = os.Stdout
@@ -227,7 +296,18 @@ func printWeights(outFile string) {
 	}
 	startx, starty := 0, 0
 	endx, endy := width, height
-
+	if center.x != 0 && center.y != 0 {
+		startx = center.x - 10
+		starty = center.y - 10
+		endx = center.x + 10
+		endy = center.y + 10
+		if startx < 0 {
+			startx = 0
+		}
+		if starty < 0 {
+			starty = 0
+		}
+	}
 	for y := starty; y < endy; y++ {
 		var line string
 		for x := startx; x < endx; x++ {
@@ -238,7 +318,7 @@ func printWeights(outFile string) {
 			line += "	" + fmt.Sprintf("%d", -1)
 		}
 		fmt.Fprintln(out, line)
-		println()
+		fmt.Fprintln(out)
 	}
 
 }
@@ -289,7 +369,6 @@ func dirToByte(dir int) byte {
 	return 64
 }
 
-/*
 func printHike(hike []point, center point) {
 	startx, starty := 0, 0
 	endx, endy := width, height
@@ -336,7 +415,6 @@ func printHike(hike []point, center point) {
 		fmt.Fprintln(out, string(line))
 	}
 }
-*/
 
 func neighbours(pos point) map[point]bool {
 	var points = make(map[point]bool)
@@ -374,7 +452,7 @@ func noClimbing(currentZ int, neighbours map[point]bool) {
 
 func noFalling(currentZ int, neighbours map[point]bool) {
 	for k, _ := range neighbours {
-		if k.z < currentZ {
+		if k.z < currentZ-1 {
 			delete(neighbours, k)
 		}
 	}
