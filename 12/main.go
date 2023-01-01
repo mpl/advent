@@ -119,7 +119,7 @@ func main() {
 	pos := point{x: start.x, y: start.y, z: zstart}
 
 	seen := make(map[point]bool)
-	hike, err := visit(pos, seen, 0)
+	hike, err := visit(pos, seen, 0, false)
 	if err != nil {
 		println(err.Error())
 	}
@@ -140,7 +140,7 @@ func copySeen(seen map[point]bool) map[point]bool {
 }
 
 // TODO: optimizations to fail faster
-func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) {
+func visit(pos point, seen map[point]bool, depth int, isRetry bool) (hike []point, err error) {
 	// println("VISITING ", pos.x, pos.y)
 	if depth == 10000 {
 		// TODO: is this makeing us loop forever??
@@ -172,6 +172,15 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 	obstacle := noClimbing(pos.z, nb)
 	obstacle = append(obstacle, noFalling(pos.z, nb)...)
 	notTwice(nb, seen)
+
+	if isRetry {
+		if len(obstacle) == 0 {
+			return nil, fmt.Errorf("dead end BLABLA at %d, %d", pos.x, pos.y)
+		}
+		if _, ok := isRubbing(pos, nb); !ok {
+			return nil, fmt.Errorf("dead end BLABLA2 at %d, %d", pos.x, pos.y)
+		}
+	}
 
 	if *debug && (pos.x == debugX && pos.y == debugY || depth > depthDebug) {
 		println(depth, pos.x, pos.y, "NEIGHBOURS: ", len(nb))
@@ -211,6 +220,7 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 	}
 
 	// TODO: remove?
+	// no, it actually does something.
 	if isWrongWay(pos, sorted[0], obstacle) {
 		if pos.x == 47 && pos.y == 15 {
 			// println("SORTEDeuoueDDDD: ", len(sorted))
@@ -233,6 +243,7 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 	var bestHike []point
 	//	for i, v := range sorted {
 	// not using range, because we might want to skip over one of them
+	doRetry := false
 	for i := 0; i < len(sorted); i++ {
 		v := sorted[i]
 		newPos, ok := nb[v]
@@ -240,7 +251,7 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 			panic("UNEXPECTED UNFOUND POS")
 		}
 		cps := copySeen(seen)
-		hike, err := visit(newPos, cps, depth+1)
+		hike, err := visit(newPos, cps, depth+1, doRetry)
 		if err != nil {
 			if *debug {
 				_ = i
@@ -273,94 +284,9 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 		// should we still attempt other routes?
 
 		if len(sorted) == 2 {
-			newPos2, _ := nb[sorted[1]]
-
-			if len(obstacle) > 0 {
-				continue
-			}
-
-			if _, ok := isRubbing(newPos2, nb); ok {
-				continue
-			}
-
-			break
-
-			// println("FROM", pos.x, pos.y, "WE WOULD TRY", sorted[1], dir2.x, dir2.y)
-			// break
-
-			// we're touching an obstacle
-			if len(obstacle) == 1 {
-				continue
-			}
-
-			if _, ok := isRubbing(pos, nb); ok {
-				// continue
-			}
-
-			break
-
-			//			dir2, _ := nb[sorted[1]]
-			if newPos.x == newPos2.x || newPos.y == newPos2.y {
-				continue
-			}
-			if *debug {
-				// println(fmt.Sprintf("%d IS BRANCHING2 FOR %d,%d and %d,%d", depth, dir1.x, dir1.y, dir2.x, dir2.y))
-			}
-
-			if isBranch(newPos, newPos2) {
-				continue
-			}
-
-			break
-
-			// TODO: remove all below?
-
-			break
+			doRetry = true
+			continue
 		}
-
-		break
-
-		/*
-			if len(sorted) == 3 {
-				log.Fatal("CAN IT HAPPEN?")
-				dir2, _ := nb[sorted[i+1]]
-				if *debug {
-					// println(fmt.Sprintf("%d IS BRANCHING3 FOR %d,%d and %d,%d", depth, posTried.x, posTried.y, dir2.x, dir2.y))
-				}
-				if isBranch(posTried, dir2) {
-					continue
-				}
-				if i > 0 {
-					break
-				}
-
-				dir3, _ := nb[sorted[i+2]]
-				if *debug {
-					// println(fmt.Sprintf("%d IS BRANCHING3 BIS FOR %d,%d and %d,%d", depth, posTried.x, posTried.y, dir3.x, dir3.y))
-				}
-				if isBranch(posTried, dir3) {
-					i++
-					continue
-				}
-				break
-			}
-
-			if len(sorted) == 2 {
-				dir1, _ := nb[sorted[0]]
-				dir2, _ := nb[sorted[1]]
-				if dir1.x == dir2.x || dir1.y == dir2.y {
-					continue
-				}
-				if *debug {
-					// println(fmt.Sprintf("%d IS BRANCHING2 FOR %d,%d and %d,%d", depth, dir1.x, dir1.y, dir2.x, dir2.y))
-				}
-				if isBranch(dir1, dir2) {
-					continue
-				}
-				break
-			}
-		*/
-
 		break
 
 	}
