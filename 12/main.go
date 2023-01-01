@@ -212,12 +212,10 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 
 	// TODO: remove?
 	if isWrongWay(pos, sorted[0], obstacle) {
-
 		if pos.x == 47 && pos.y == 15 {
 			// println("SORTEDeuoueDDDD: ", len(sorted))
 		}
-
-		// return nil, fmt.Errorf("wrong way from %d,%d going %d", pos.x, pos.y, sorted[0])
+		return nil, fmt.Errorf("wrong way from %d,%d going %d", pos.x, pos.y, sorted[0])
 	}
 
 	if depth > 0 && atEdge(pos) {
@@ -237,15 +235,12 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 	// not using range, because we might want to skip over one of them
 	for i := 0; i < len(sorted); i++ {
 		v := sorted[i]
-		posTried, ok := nb[v]
+		newPos, ok := nb[v]
 		if !ok {
-			posTried, ok = above[v]
-			if !ok {
-				panic("UNEXPECTED UNFOUND POS")
-			}
+			panic("UNEXPECTED UNFOUND POS")
 		}
 		cps := copySeen(seen)
-		hike, err := visit(posTried, cps, depth+1)
+		hike, err := visit(newPos, cps, depth+1)
 		if err != nil {
 			if *debug {
 				_ = i
@@ -278,8 +273,18 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 		// should we still attempt other routes?
 
 		if len(sorted) == 2 {
-			continue
-			dir2, _ := nb[sorted[1]]
+			newPos2, _ := nb[sorted[1]]
+
+			if len(obstacle) > 0 {
+				continue
+			}
+
+			if _, ok := isRubbing(newPos2, nb); ok {
+				continue
+			}
+
+			break
+
 			// println("FROM", pos.x, pos.y, "WE WOULD TRY", sorted[1], dir2.x, dir2.y)
 			// break
 
@@ -294,16 +299,15 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 
 			break
 
-			dir1, _ := nb[sorted[0]]
 			//			dir2, _ := nb[sorted[1]]
-			if dir1.x == dir2.x || dir1.y == dir2.y {
+			if newPos.x == newPos2.x || newPos.y == newPos2.y {
 				continue
 			}
 			if *debug {
 				// println(fmt.Sprintf("%d IS BRANCHING2 FOR %d,%d and %d,%d", depth, dir1.x, dir1.y, dir2.x, dir2.y))
 			}
 
-			if isBranch(dir1, dir2) {
+			if isBranch(newPos, newPos2) {
 				continue
 			}
 
@@ -316,44 +320,46 @@ func visit(pos point, seen map[point]bool, depth int) (hike []point, err error) 
 
 		break
 
-		if len(sorted) == 3 {
-			log.Fatal("CAN IT HAPPEN?")
-			dir2, _ := nb[sorted[i+1]]
-			if *debug {
-				// println(fmt.Sprintf("%d IS BRANCHING3 FOR %d,%d and %d,%d", depth, posTried.x, posTried.y, dir2.x, dir2.y))
-			}
-			if isBranch(posTried, dir2) {
-				continue
-			}
-			if i > 0 {
+		/*
+			if len(sorted) == 3 {
+				log.Fatal("CAN IT HAPPEN?")
+				dir2, _ := nb[sorted[i+1]]
+				if *debug {
+					// println(fmt.Sprintf("%d IS BRANCHING3 FOR %d,%d and %d,%d", depth, posTried.x, posTried.y, dir2.x, dir2.y))
+				}
+				if isBranch(posTried, dir2) {
+					continue
+				}
+				if i > 0 {
+					break
+				}
+
+				dir3, _ := nb[sorted[i+2]]
+				if *debug {
+					// println(fmt.Sprintf("%d IS BRANCHING3 BIS FOR %d,%d and %d,%d", depth, posTried.x, posTried.y, dir3.x, dir3.y))
+				}
+				if isBranch(posTried, dir3) {
+					i++
+					continue
+				}
 				break
 			}
 
-			dir3, _ := nb[sorted[i+2]]
-			if *debug {
-				// println(fmt.Sprintf("%d IS BRANCHING3 BIS FOR %d,%d and %d,%d", depth, posTried.x, posTried.y, dir3.x, dir3.y))
+			if len(sorted) == 2 {
+				dir1, _ := nb[sorted[0]]
+				dir2, _ := nb[sorted[1]]
+				if dir1.x == dir2.x || dir1.y == dir2.y {
+					continue
+				}
+				if *debug {
+					// println(fmt.Sprintf("%d IS BRANCHING2 FOR %d,%d and %d,%d", depth, dir1.x, dir1.y, dir2.x, dir2.y))
+				}
+				if isBranch(dir1, dir2) {
+					continue
+				}
+				break
 			}
-			if isBranch(posTried, dir3) {
-				i++
-				continue
-			}
-			break
-		}
-
-		if len(sorted) == 2 {
-			dir1, _ := nb[sorted[0]]
-			dir2, _ := nb[sorted[1]]
-			if dir1.x == dir2.x || dir1.y == dir2.y {
-				continue
-			}
-			if *debug {
-				// println(fmt.Sprintf("%d IS BRANCHING2 FOR %d,%d and %d,%d", depth, dir1.x, dir1.y, dir2.x, dir2.y))
-			}
-			if isBranch(dir1, dir2) {
-				continue
-			}
-			break
-		}
+		*/
 
 		break
 
