@@ -115,10 +115,10 @@ func main() {
 		dest.y = *destY
 	}
 
-	z, _ := topomap[start]
-	pos := point{x: start.x, y: start.y, z: z, weight: 0}
-	// z, _ := topomap[dest]
-	// pos := point{x: dest.x, y: dest.y, z: z, weight: 0}
+	// z, _ := topomap[start]
+	// pos := point{x: start.x, y: start.y, z: z, weight: 0}
+	z, _ := topomap[dest]
+	pos := point{x: dest.x, y: dest.y, z: z, weight: 0}
 
 	discovery = append(discovery, pos)
 	seen[position{x: pos.x, y: pos.y}] = true
@@ -131,7 +131,7 @@ func main() {
 	printSeen("./seen.txt")
 	printWeights(position{}, "./weights.txt")
 	printHike(hike, point{})
-	println("STEPS: ", len(hike))
+	println("STEPS: ", len(hike)-1)
 }
 
 func genWeights() {
@@ -171,9 +171,10 @@ func visit(pos point) {
 	if destinationFucked {
 		return
 	}
-	//	if pos.x == start.x && pos.y == start.y {
-	if pos.x == dest.x && pos.y == dest.y {
+	if pos.x == start.x && pos.y == start.y {
+		// if pos.x == dest.x && pos.y == dest.y {
 		if *verbose || *debug {
+			//			println("Found dest ", dest.x, dest.y)
 			println("Found start ", start.x, start.y)
 		}
 		destinationFucked = true
@@ -181,9 +182,8 @@ func visit(pos point) {
 	}
 
 	nb := neighbours(pos)
-	noClimbing(pos.z, nb)
-	//	noFalling2(pos.z, nb)
-	// noFalling(pos.z, nb)
+	noClimbing2(pos.z, nb)
+	// noFalling2(pos.z, nb)
 	checkSeen(nb)
 	if *debug {
 		println(len(nb), " neighbours from", pos.x, pos.y)
@@ -196,12 +196,17 @@ func visit(pos point) {
 	}
 }
 
+// 498 trop haut
+
 func genHike() []point {
-	pos := point{x: dest.x, y: dest.y, weight: 10000}
-	pos.weight, _ = weights[dest]
+	//	pos := point{x: dest.x, y: dest.y}
+	//	pos.weight, _ = weights[dest]
+	pos := point{x: start.x, y: start.y}
+	pos.weight, _ = weights[start]
 	var hike []point
 	for {
-		if pos.x == start.x && pos.y == start.y {
+		//		if pos.x == start.x && pos.y == start.y {
+		if pos.x == dest.x && pos.y == dest.y {
 			hike = append(hike, pos)
 			break
 		}
@@ -471,19 +476,18 @@ func noClimbing(currentZ int, neighbours map[point]bool) {
 	return
 }
 
-// TODO: allow falling, but avoid falling into 'a' for optimisation.
-func noFalling(currentZ int, neighbours map[point]bool) {
+func noClimbing2(currentZ int, neighbours map[point]bool) {
 	for k, _ := range neighbours {
-		if k.z < currentZ {
+		if k.z < currentZ-1 {
 			delete(neighbours, k)
 		}
 	}
 	return
 }
 
-func noFalling2(currentZ int, neighbours map[point]bool) {
+func noFalling(currentZ int, neighbours map[point]bool) {
 	for k, _ := range neighbours {
-		if k.z < currentZ-1 {
+		if k.z < currentZ {
 			delete(neighbours, k)
 		}
 	}
