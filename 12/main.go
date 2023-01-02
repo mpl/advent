@@ -8,6 +8,8 @@ import (
 	"log"
 	"os"
 	"time"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
 var (
@@ -35,9 +37,10 @@ type point struct {
 }
 
 var (
-	start             position
-	dest              position
-	topomap           = make(map[position]int)
+	start   position
+	dest    position
+	topomap = make(map[position]int)
+	// TODO: not really "seen", more like added to the queue
 	seen              = make(map[position]bool)
 	discovery         []point
 	weights           = make(map[position]int)
@@ -112,36 +115,46 @@ func main() {
 		dest.y = *destY
 	}
 
-	// zstart, _ := topomap[start]
-	zdest, _ := topomap[dest]
-	pos := point{x: dest.x, y: dest.y, z: zdest, weight: 0}
+	z, _ := topomap[start]
+	pos := point{x: start.x, y: start.y, z: z, weight: 0}
+	// z, _ := topomap[dest]
+	// pos := point{x: dest.x, y: dest.y, z: z, weight: 0}
 
 	discovery = append(discovery, pos)
+	seen[position{x: pos.x, y: pos.y}] = true
 	visitAll()
+	println("DISCOVERY DONE")
 
-	for _, v := range discovery {
-		weights[position{x: v.x, y: v.y}] = v.weight
-	}
-
+	genWeights()
 	hike := genHike()
 
 	printSeen("./seen.txt")
-	printWeights(dest, "./weights.txt")
+	printWeights(position{}, "./weights.txt")
 	printHike(hike, point{})
-	println("STEPS: ", len(hike))
+	println("STEPS: ", len(hike)-1)
 }
 
+func genWeights() {
+	for _, v := range discovery {
+		weights[position{x: v.x, y: v.y}] = v.weight
+	}
+}
+
+// move stopping condition as argument to visitAll?
 func visitAll() {
 	length := 1
 	toVisit := discovery
 	for {
+		if *debug {
+			spew.Dump("QUEUE", discovery)
+		}
 		for _, v := range toVisit {
 			visit(v)
 		}
 		index := length
 		length = len(discovery)
 		toVisit = discovery[index:]
-		if destinationFucked {
+		if destinationFucked || index == length {
 			return
 		}
 	}
@@ -158,8 +171,8 @@ func visit(pos point) {
 	if destinationFucked {
 		return
 	}
-	seen[position{x: pos.x, y: pos.y}] = true
-	if pos.x == start.x && pos.y == start.y {
+	//	if pos.x == start.x && pos.y == start.y {
+	if pos.x == dest.x && pos.y == dest.y {
 		if *verbose || *debug {
 			println("Found start ", start.x, start.y)
 		}
@@ -169,6 +182,7 @@ func visit(pos point) {
 
 	nb := neighbours(pos)
 	noClimbing(pos.z, nb)
+	//	noFalling2(pos.z, nb)
 	noFalling(pos.z, nb)
 	checkSeen(nb)
 	if *debug {
@@ -176,16 +190,18 @@ func visit(pos point) {
 	}
 
 	for k, _ := range nb {
+		seen[position{x: k.x, y: k.y}] = true
 		k.weight = pos.weight + 1
 		discovery = append(discovery, k)
 	}
 }
 
 func genHike() []point {
-	pos := point{x: start.x, y: start.y, weight: 10000}
+	pos := point{x: dest.x, y: dest.y, weight: 10000}
+	pos.weight, _ = weights[dest]
 	var hike []point
 	for {
-		if pos.x == dest.x && pos.y == dest.y {
+		if pos.x == start.x && pos.y == start.y {
 			hike = append(hike, pos)
 			break
 		}
@@ -193,11 +209,14 @@ func genHike() []point {
 		bestDir := 0
 		lowestWeight := pos.weight
 		var bestNext point
+		// TODO: could there be multiple valid (but unequal) routes down?
+		// if not, clean up.
 		for k, v := range nb {
-			if v.weight < lowestWeight {
+			if v.weight == lowestWeight-1 {
 				lowestWeight = v.weight
 				bestDir = k
 				bestNext = v
+				break
 			}
 		}
 		pos.next = bestDir
@@ -451,6 +470,15 @@ func noClimbing(currentZ int, neighbours map[point]bool) {
 }
 
 func noFalling(currentZ int, neighbours map[point]bool) {
+	for k, _ := range neighbours {
+		if k.z < currentZ {
+			delete(neighbours, k)
+		}
+	}
+	return
+}
+
+func noFalling2(currentZ int, neighbours map[point]bool) {
 	for k, _ := range neighbours {
 		if k.z < currentZ-1 {
 			delete(neighbours, k)
