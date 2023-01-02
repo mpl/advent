@@ -20,7 +20,6 @@ var (
 	destY   = flag.Int("destY", 0, `desty`)
 	startX  = flag.Int("startX", 0, `startx`)
 	startY  = flag.Int("startY", 0, `starty`)
-	gseen   = flag.Bool("seen", false, `seen so far`)
 )
 
 type position struct {
@@ -47,13 +46,10 @@ var (
 	destinationFucked bool
 
 	RIGHT, UP, LEFT, DOWN = 1, 2, 3, 4
-	RU, UL, LD, DR        = 5, 6, 7, 8
 	bottom                = int('a')
 	top                   = int('z')
 	width                 = 0
 	height                = 0
-	debugX, debugY        = 41, 15
-	depthDebug            = 30
 	pause                 = time.Second
 )
 
@@ -99,14 +95,6 @@ func main() {
 		// printMap(point{})
 	}
 
-	if *gseen {
-		go func() {
-			time.Sleep(30 * time.Second)
-			printSeen("./seen.txt")
-			log.Fatal("TIMEOUT")
-		}()
-	}
-
 	println("STARTING AT ", start.x, start.y)
 	if *destX != 0 {
 		dest.x = *destX
@@ -140,7 +128,7 @@ func genWeights() {
 	}
 }
 
-// move stopping condition as argument to visitAll?
+// TODO: move stopping condition as argument to visitAll?
 func visitAll() {
 	length := 1
 	toVisit := discovery
@@ -183,7 +171,8 @@ func visit(pos point) {
 
 	nb := neighbours(pos)
 	noClimbing2(pos.z, nb)
-	// noFalling2(pos.z, nb)
+	// TODO: small optim: don't fall into the a-holes.
+	// noFalling(pos.z, nb)
 	checkSeen(nb)
 	if *debug {
 		println(len(nb), " neighbours from", pos.x, pos.y)
@@ -195,8 +184,6 @@ func visit(pos point) {
 		discovery = append(discovery, k)
 	}
 }
-
-// 498 trop haut
 
 func genHike() []point {
 	//	pos := point{x: dest.x, y: dest.y}
@@ -212,15 +199,12 @@ func genHike() []point {
 		}
 		nb := neighbours2(pos)
 		bestDir := 0
-		lowestWeight := pos.weight
 		var bestNext point
-		// TODO: could there be multiple valid (but unequal) routes down?
-		// if not, clean up.
+		// Intersting that it just works to pick the first route we find...
+		// Does that mean it is the only valid one, by construction?
+		// Or maybe that all the valid ones are made of only 1-step increments?
 		for k, v := range nb {
-			// TODO: rewrite in one condition?
-			// if v.weight == lowestWeight-1 || v.weight > lowestWeight {
-			if v.weight == lowestWeight-1 {
-				lowestWeight = v.weight
+			if v.weight == pos.weight-1 {
 				bestDir = k
 				bestNext = v
 				break
