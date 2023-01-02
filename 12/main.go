@@ -131,7 +131,7 @@ func main() {
 	printSeen("./seen.txt")
 	printWeights(position{}, "./weights.txt")
 	printHike(hike, point{})
-	println("STEPS: ", len(hike)-1)
+	println("STEPS: ", len(hike))
 }
 
 func genWeights() {
@@ -183,7 +183,7 @@ func visit(pos point) {
 	nb := neighbours(pos)
 	noClimbing(pos.z, nb)
 	//	noFalling2(pos.z, nb)
-	noFalling(pos.z, nb)
+	// noFalling(pos.z, nb)
 	checkSeen(nb)
 	if *debug {
 		println(len(nb), " neighbours from", pos.x, pos.y)
@@ -212,6 +212,8 @@ func genHike() []point {
 		// TODO: could there be multiple valid (but unequal) routes down?
 		// if not, clean up.
 		for k, v := range nb {
+			// TODO: rewrite in one condition?
+			// if v.weight == lowestWeight-1 || v.weight > lowestWeight {
 			if v.weight == lowestWeight-1 {
 				lowestWeight = v.weight
 				bestDir = k
@@ -469,6 +471,7 @@ func noClimbing(currentZ int, neighbours map[point]bool) {
 	return
 }
 
+// TODO: allow falling, but avoid falling into 'a' for optimisation.
 func noFalling(currentZ int, neighbours map[point]bool) {
 	for k, _ := range neighbours {
 		if k.z < currentZ {
