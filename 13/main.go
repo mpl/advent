@@ -68,56 +68,89 @@ func main() {
 			}
 		}
 		count++
-		lParts := split(v.left)
-		rParts := split(v.right)
+		left := v.left[1 : len(v.left)-1]
+		right := v.right[1 : len(v.right)-1]
 
-		for k, left := range lParts {
-			right := rParts[k]
-			if *debug {
-				println(left, "VS", right)
-			}
-
-			asLists := false
-			leftIsList := strings.Contains(left, ",")
-			rightIsList := strings.Contains(right, ",")
-
-			if leftIsList && !rightIsList {
-				// TODO: fixright
-				asLists = true
-			}
-
-			if rightIsList && !leftIsList {
-				// TODO: fixleft
-				asLists = true
-			}
-
-			if rightIsList || leftIsList {
-				asLists = true
-			}
-
-			if asLists {
-				// TODO: recurse
-				continue
-			}
-
-			cmp := compareInts(left, right)
-			if cmp == 0 {
-				continue
-			}
-			if cmp < 0 {
-				println("correct order")
-				break
-			}
-			if cmp > 0 {
-				println("wrong order")
-				break
-			}
+		cmp := compareLists(left, right)
+		if cmp == 0 {
+			panic("EQUAL PAIR?")
+		}
+		if cmp < 0 {
+			println("correct order")
+			continue
+		}
+		if cmp > 0 {
+			println("wrong order")
+			continue
 		}
 	}
 
 }
 
-func compareInts(left, right) int {
+func compareLists(leftInput, rightInput string) int {
+	lParts := split(leftInput)
+	rParts := split(rightInput)
+
+	// TODO: what if rParts is longer than lParts?
+	//	for k, left := range lParts {
+	i := 0
+	for {
+		if len(lParts) < len(rParts) {
+			if i+1 > len(lParts) {
+				return -1
+			}
+		}
+		if len(rParts) < len(lParts) {
+			if i+1 > len(rParts) {
+				return 1
+			}
+		}
+		if len(rParts) == len(lParts) {
+			if i+1 > len(lParts) {
+				break
+			}
+		}
+		left := lParts[i]
+		right := rParts[i]
+		i++
+		if *debug {
+			println(left, "VS", right)
+		}
+
+		asLists := false
+		leftIsList := strings.Contains(left, ",")
+		rightIsList := strings.Contains(right, ",")
+
+		if leftIsList && !rightIsList {
+			asLists = true
+		}
+
+		if rightIsList && !leftIsList {
+			asLists = true
+		}
+
+		if rightIsList || leftIsList {
+			asLists = true
+		}
+
+		if asLists {
+			cmpL := compareLists(left, right)
+			if cmpL == 0 {
+				continue
+			}
+			return cmpL
+		}
+
+		cmp := compareInts(left, right)
+		if cmp == 0 {
+			continue
+		}
+		return cmp
+	}
+	return 0
+}
+
+func compareInts(left, right string) int {
 	nbLeft, err := strconv.Atoi(left)
 	if err != nil {
 		panic(err.Error())
@@ -126,17 +159,17 @@ func compareInts(left, right) int {
 	if err != nil {
 		panic(err.Error())
 	}
-	if left < right {
+	if nbLeft < nbRight {
 		return -1
 	}
-	if left > right {
+	if nbLeft > nbRight {
 		return 1
 	}
 	return 0
 }
 
 func split(input string) []string {
-	input = input[1 : len(input)-1]
+	// input = input[1 : len(input)-1]
 	if !strings.Contains(input, "[") {
 		return strings.Split(input, ",")
 	}
