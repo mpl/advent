@@ -57,14 +57,12 @@ func main() {
 
 	initPairs()
 
-	if *debug {
-	}
-
+	result := 0
 	count := 0
-	for _, v := range pairs {
+	for k, v := range pairs {
 		if *debug {
 			if count == debugCount {
-				break
+				// break
 			}
 		}
 		count++
@@ -77,6 +75,7 @@ func main() {
 		}
 		if cmp < 0 {
 			println("correct order")
+			result += k + 1
 			continue
 		}
 		if cmp > 0 {
@@ -84,6 +83,7 @@ func main() {
 			continue
 		}
 	}
+	println("RESULT: ", result)
 
 }
 
@@ -91,8 +91,6 @@ func compareLists(leftInput, rightInput string) int {
 	lParts := split(leftInput)
 	rParts := split(rightInput)
 
-	// TODO: what if rParts is longer than lParts?
-	//	for k, left := range lParts {
 	i := 0
 	for {
 		if len(lParts) < len(rParts) {
@@ -118,16 +116,8 @@ func compareLists(leftInput, rightInput string) int {
 		}
 
 		asLists := false
-		leftIsList := strings.Contains(left, ",")
-		rightIsList := strings.Contains(right, ",")
-
-		if leftIsList && !rightIsList {
-			asLists = true
-		}
-
-		if rightIsList && !leftIsList {
-			asLists = true
-		}
+		leftIsList := strings.Contains(left, ",") || strings.HasPrefix(left, "[")
+		rightIsList := strings.Contains(right, ",") || strings.HasPrefix(right, "[")
 
 		if rightIsList || leftIsList {
 			asLists = true
@@ -150,26 +140,10 @@ func compareLists(leftInput, rightInput string) int {
 	return 0
 }
 
-func compareInts(left, right string) int {
-	nbLeft, err := strconv.Atoi(left)
-	if err != nil {
-		panic(err.Error())
-	}
-	nbRight, err := strconv.Atoi(right)
-	if err != nil {
-		panic(err.Error())
-	}
-	if nbLeft < nbRight {
-		return -1
-	}
-	if nbLeft > nbRight {
-		return 1
-	}
-	return 0
-}
-
 func split(input string) []string {
-	// input = input[1 : len(input)-1]
+	if input == "" {
+		return []string{}
+	}
 	if !strings.Contains(input, "[") {
 		return strings.Split(input, ",")
 	}
@@ -228,4 +202,22 @@ func indexClosing(input string) int {
 		}
 	}
 	return -1
+}
+
+func compareInts(left, right string) int {
+	nbLeft, err := strconv.Atoi(left)
+	if err != nil {
+		panic(err.Error())
+	}
+	nbRight, err := strconv.Atoi(right)
+	if err != nil {
+		panic(err.Error())
+	}
+	if nbLeft < nbRight {
+		return -1
+	}
+	if nbLeft > nbRight {
+		return 1
+	}
+	return 0
 }
