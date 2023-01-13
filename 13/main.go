@@ -11,17 +11,17 @@ import (
 )
 
 var (
-	debug   = flag.Bool("debug", false, `debug mode`)
-	verbose = flag.Bool("verbose", false, `verbose mode`)
-	demo    = flag.Bool("demo", false, `use demo input`)
+	debug      = flag.Bool("debug", false, `debug mode`)
+	verbose    = flag.Bool("verbose", false, `verbose mode`)
+	demo       = flag.Bool("demo", false, `use demo input`)
+	debugStart = flag.Int("dbgstart", -1, `debug start index`)
+	debugEnd   = flag.Int("dbgend", -1, `debug end index`)
 )
 
 var (
 	pairs []pair
 
 	debugCount = 2
-	debugStart = 0
-	debugEnd   = 0
 )
 
 type pair struct {
@@ -62,6 +62,12 @@ func main() {
 	result := 0
 	count := 0
 	for _, v := range pairs {
+		if *debugStart != -1 || *debugEnd != -1 {
+			*debug = false
+		}
+		if *debugStart > -1 && count >= *debugStart && count <= *debugEnd {
+			*debug = true
+		}
 		if *debug {
 			if count == debugCount {
 				// break
@@ -78,9 +84,7 @@ func main() {
 		}
 		if cmp < 0 {
 			println("correct order")
-			println("BEFORE", result)
 			result += count
-			println("AFTER", result)
 			continue
 		}
 		if cmp > 0 {
@@ -210,7 +214,9 @@ func indexClosing(input string) int {
 }
 
 func compareInts(left, right string) int {
-	// TODO: probably not the right fix
+	if left == "" && right == "" {
+		return 0
+	}
 	if left == "" {
 		return -1
 	}
