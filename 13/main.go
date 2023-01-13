@@ -20,6 +20,8 @@ var (
 	pairs []pair
 
 	debugCount = 2
+	debugStart = 0
+	debugEnd   = 0
 )
 
 type pair struct {
@@ -59,13 +61,14 @@ func main() {
 
 	result := 0
 	count := 0
-	for k, v := range pairs {
+	for _, v := range pairs {
 		if *debug {
 			if count == debugCount {
 				// break
 			}
 		}
 		count++
+		println("PAIR", count)
 		left := v.left[1 : len(v.left)-1]
 		right := v.right[1 : len(v.right)-1]
 
@@ -75,7 +78,9 @@ func main() {
 		}
 		if cmp < 0 {
 			println("correct order")
-			result += k + 1
+			println("BEFORE", result)
+			result += count
+			println("AFTER", result)
 			continue
 		}
 		if cmp > 0 {
@@ -205,6 +210,13 @@ func indexClosing(input string) int {
 }
 
 func compareInts(left, right string) int {
+	// TODO: probably not the right fix
+	if left == "" {
+		return -1
+	}
+	if right == "" {
+		return 1
+	}
 	nbLeft, err := strconv.Atoi(left)
 	if err != nil {
 		panic(err.Error())
